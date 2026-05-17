@@ -87,3 +87,26 @@ EyeForge/
 ## 免责声明
 
 EyeForge 仅作为 AI 与您的键盘鼠标之间的连接桥梁，将 AI 的决策转化为实际的鼠标和键盘操作。AI 的行为由其自身的模型和算法决定，与 EyeForge 无关。使用者应对 AI 的操作结果自行负责，请勿在不受你控制的设备上使用，或在无人值守时长时间运行。
+
+## Q&A
+
+### 支持哪些 AI 模型？
+OpenAI（GPT-4o 等）、Anthropic（Claude 3.5/4 等）、Ollama（LLaVA 等本地模型）、Gemini、以及任何兼容 OpenAI 接口的自定义服务。
+
+### 为什么需要多模态模型？
+EyeForge 需要模型能"看懂"屏幕截图才能决定下一步操作。非多模态模型（如 GPT-3.5、Claude 3 Haiku）无法处理图片。
+
+### 如何配置？
+首次启动会弹出向导，选择语言 → 填写 API Key 和模型名 → 设置截屏参数。也可以在设置对话框中随时修改。
+
+### 如何更新？
+设置 → 更新标签页，点击检查更新；或直接访问 [GitHub Releases](https://github.com/xiaopi668/EyeForge/releases) / [GitCode Releases](https://gitcode.com/xiaopi668/EyeForge/releases)。
+
+### 可以多显示器吗？
+可以，点击动画会自动适配所有显示器。
+
+### 如何更换 API 提供商？
+设置 → AI 模型标签页，选择不同的提供商，填写对应的 API Key 和模型名即可。
+
+### 是否安全？
+API 密钥使用 `cryptography` 库加密存储在 `config.json` 中，不会明文保存。请勿将 `config.json` 提交到公开仓库。

@@ -86,3 +86,26 @@ EyeForge/
 ## Disclaimer
 
 EyeForge acts solely as a bridge between the AI model and your keyboard and mouse, translating the AI's decisions into actual mouse and keyboard operations. The AI's behavior is determined by its own model and algorithms, not by EyeForge. Users are solely responsible for the outcomes of AI operations. Do not use it on devices you do not own, or leave it running unattended for extended periods.
+
+## Q&A
+
+### Which AI models are supported?
+OpenAI (GPT-4o, etc.), Anthropic (Claude 3.5/4, etc.), Ollama (LLaVA and other local models), Gemini, and any OpenAI-compatible custom service.
+
+### Why is a multimodal model required?
+EyeForge needs the model to "see" the screen to decide the next action. Non-multimodal models (e.g., GPT-3.5, Claude 3 Haiku) cannot process images.
+
+### How do I configure it?
+On first launch, a setup wizard will guide you through: select language → enter API Key and model name → configure capture settings. You can also modify everything later in the Settings dialog.
+
+### How do I update?
+Go to Settings → Update tab, click "Check Update"; or visit [GitHub Releases](https://github.com/xiaopi668/EyeForge/releases) / [GitCode Releases](https://gitcode.com/xiaopi668/EyeForge/releases) directly.
+
+### Does it support multiple monitors?
+Yes, click animations automatically adapt to all monitors.
+
+### How do I switch API providers?
+Go to Settings → AI Model tab, select a different provider, and fill in the corresponding API Key and model name.
+
+### Is it secure?
+API keys are encrypted with the `cryptography` library and stored in `config.json` — never in plain text. Do not commit `config.json` to public repositories.
