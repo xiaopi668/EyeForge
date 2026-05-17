@@ -40,7 +40,7 @@ SYSTEM_PROMPT_ZH = """你是一个能够看屏幕并控制电脑的AI助手。
 ## 规则
 1. 每一步只执行一个操作
 2. 根据屏幕截图内容决定下一步行动
-3. 任务完成后输出 {"action": {"type": "complete"}, "thought": "任务已完成"}
+3. 任务完成后输出 {"action": {"type": "complete"}, "thought": "任务已完成"}，action **必须为对象**（而非字符串）
 4. 如果遇到不确定的情况，先观察屏幕再做决定
 """
 
@@ -86,7 +86,7 @@ You must output strictly in the following JSON format (JSON only, no extra text)
 ## Rules
 1. Execute only one action per step
 2. Decide next action based on screen content
-3. Output {"action": {"type": "complete"}} when task is done
+3. Output {"action": {"type": "complete"}} when task is done — action **must be an object** (not a string)
 4. If unsure, observe the screen first
 """
 

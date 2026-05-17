@@ -2,6 +2,7 @@ import sys
 import os
 import json
 import logging
+import ctypes
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,6 +39,10 @@ def main():
         qInstallMessageHandler(_qt_message_handler)
         os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
         QApplication.setAttribute(0x100, True)
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("eyeforge.app.1")
+        except Exception:
+            pass
         app = QApplication(sys.argv)
         app.setApplicationName("EyeForge")
 

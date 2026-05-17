@@ -453,7 +453,28 @@ class SettingsDialog(QDialog):
         self._update_btn.setText(self._tr("🔄 检查更新", "🔄 Check Update"))
 
     def _save(self):
-        self.config["llm_provider"] = self._provider_combo.currentData()
+        prov = self._provider_combo.currentData()
+        model_key = {"openai": "openai_model", "anthropic": "anthropic_model",
+                     "ollama": "ollama_model", "gemini": "gemini_model", "custom": "custom_model"}
+        model_field = {"openai": self._openai_model, "anthropic": self._anthropic_model,
+                       "ollama": self._ollama_model, "gemini": self._gemini_model, "custom": self._custom_model}
+        model_name = model_field[prov].text().strip()
+        from src.utils.multimodal import is_multimodal
+        if model_name and not is_multimodal(model_name):
+            mb = QMessageBox(self)
+            mb.setWindowTitle(self._tr("警告", "Warning"))
+            mb.setText(self._tr(
+                f'模型 "{model_name}" 可能不支持视觉识别。\nEyeForge 需要多模态模型。',
+                f'The model "{model_name}" may not support vision.\nEyeForge requires a multimodal model.'))
+            btn_continue = mb.addButton(self._tr("继续保存", "Save Anyway"), QMessageBox.YesRole)
+            btn_cancel = mb.addButton(self._tr("取消", "Cancel"), QMessageBox.RejectRole)
+            mb.setDefaultButton(btn_continue)
+            mb.setEscapeButton(btn_cancel)
+            mb.exec_()
+            if mb.clickedButton() == btn_cancel:
+                return
+
+        self.config["llm_provider"] = prov
         self.config["openai_api_key"] = encrypt(self._openai_key.text())
         self.config["openai_model"] = self._openai_model.text()
         self.config["anthropic_api_key"] = encrypt(self._anthropic_key.text())

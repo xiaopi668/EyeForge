@@ -53,9 +53,16 @@ class EyeForgeAgent:
         self._sh = 0
         self._has_session = False
 
-    def execute_action(self, action_data: dict) -> bool:
-        action_type = action_data.get("type", "")
+    def execute_action(self, action_data) -> bool:
         try:
+            if isinstance(action_data, str):
+                action_type = action_data
+                action_data = {}
+            elif isinstance(action_data, dict):
+                action_type = action_data.get("type", "")
+            else:
+                return False
+
             sw, sh = self.screen.get_screen_size()
             if action_type == "click_ratio":
                 x = int(action_data.get("x_ratio", 0.5) * sw)

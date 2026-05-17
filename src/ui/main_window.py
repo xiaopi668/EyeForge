@@ -434,13 +434,23 @@ class MainWindow(QMainWindow):
         if model_name and not is_multimodal(model_name):
             title = "Warning" if lang == "en" else "警告"
             msg = (f'The model "{model_name}" may not support vision.\n'
-                   f'EyeForge requires a multimodal model.\n\nContinue anyway?') if lang == "en" else (
+                   f'EyeForge requires a multimodal model.') if lang == "en" else (
                 f'模型 "{model_name}" 可能不支持视觉识别。\n'
-                f'EyeForge 需要多模态模型。\n\n是否继续？')
-            ret = QMessageBox.warning(self, title, msg,
-                                      QMessageBox.Yes | QMessageBox.No,
-                                      QMessageBox.No)
-            if ret == QMessageBox.No:
+                f'EyeForge 需要多模态模型。')
+            mb = QMessageBox(self)
+            mb.setWindowTitle(title)
+            mb.setText(msg)
+            btn_continue = mb.addButton("Continue anyway" if lang == "en" else "继续使用", QMessageBox.YesRole)
+            btn_change = mb.addButton("Change Model" if lang == "en" else "更换模型", QMessageBox.NoRole)
+            btn_cancel = mb.addButton("Cancel" if lang == "en" else "取消", QMessageBox.RejectRole)
+            mb.setDefaultButton(btn_continue)
+            mb.setEscapeButton(btn_cancel)
+            mb.exec_()
+            clicked = mb.clickedButton()
+            if clicked == btn_cancel:
+                return
+            if clicked == btn_change:
+                self._open_settings()
                 return
 
         self.start_btn.setText("⏸ Pause" if lang == "en" else "⏸ 暂停执行")
