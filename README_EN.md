@@ -8,7 +8,7 @@
 
 ## Features
 
-- **Screen Awareness** — Captures your screen in real-time and sends it to multimodal AI models for analysis
+- **Screen Awareness** — Captures your screen in real-time and sends it to **multimodal** AI models for analysis
 - **Intelligent Control** — AI autonomously plans steps, controls mouse clicks, movements, and keyboard input
 - **Multi-Model Support** — Supports OpenAI, Anthropic, Ollama, and any OpenAI-compatible custom API (requires **multimodal** models such as gpt-4o, claude-3-5-sonnet, llava, etc.)
 - **Graphical Interface** — PyQt5-based GUI with dark/light theme switching
@@ -80,3 +80,7 @@ EyeForge/
 - **mss** — High-speed screen capture
 - **Pillow / OpenCV** — Image processing
 - **OpenAI / Anthropic SDK** — AI model API calls
+
+## Disclaimer
+
+EyeForge acts solely as a bridge between the AI model and your keyboard and mouse, translating the AI's decisions into actual mouse and keyboard operations. The AI's behavior is determined by its own model and algorithms, not by EyeForge. Users are solely responsible for the outcomes of AI operations. Do not use it on devices you do not own, or leave it running unattended for extended periods.
