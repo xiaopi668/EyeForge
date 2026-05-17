@@ -89,50 +89,50 @@ EyeForge acts solely as a bridge between the AI model and your keyboard and mous
 
 ## Q&A
 
-### Which AI models are supported?
+#### Which AI models are supported?
 OpenAI (GPT-4o, etc.), Anthropic (Claude 3.5/4, etc.), Ollama (LLaVA and other local models), Gemini, and any OpenAI-compatible custom service.
 
-### Why is a multimodal model required?
+#### Why is a multimodal model required?
 EyeForge needs the model to "see" the screen to decide the next action. Non-multimodal models (e.g., GPT-3.5, Claude 3 Haiku) cannot process images.
 
-### How do I configure it?
+#### How do I configure it?
 On first launch, a setup wizard will guide you through: select language → enter API Key and model name → configure capture settings. You can also modify everything later in the Settings dialog.
 
-### How do I update?
+#### How do I update?
 Go to Settings → Update tab, click "Check Update"; or visit [GitHub Releases](https://github.com/xiaopi668/EyeForge/releases) / [GitCode Releases](https://gitcode.com/xiaopi668/EyeForge/releases) directly.
 
-### Does it support multiple monitors?
+#### Does it support multiple monitors?
 Yes, click animations automatically adapt to all monitors.
 
-### How do I switch API providers?
+#### How do I switch API providers?
 Go to Settings → AI Model tab, select a different provider, and fill in the corresponding API Key and model name.
 
-### Is it secure?
+#### Is it secure?
 API keys are encrypted with the `cryptography` library and stored in `config.json` — never in plain text. Do not commit `config.json` to public repositories.
 
-### How do I stop the agent mid-task?
+#### How do I stop the agent mid-task?
 Click the "⏸ Pause" button to stop the current task. You can then continue or enter a new task.
 
-### What screen resolutions are supported?
+#### What screen resolutions are supported?
 Any resolution works, including multiple monitors. Operations use ratio coordinates (0~1) and auto-adapt to your actual screen.
 
-### How do I switch the language?
+#### How do I switch the language?
 Go to Settings → General tab, select "中文" or "English". It takes effect immediately after closing.
 
-### What does 🟢/⚪ mean?
+#### What does 🟢/⚪ mean?
 When fetching model lists, 🟢 indicates the model supports vision (multimodal), ⚪ means it was not recognized as multimodal. 🟢 models are recommended.
 
-### Why is the model list empty?
+#### Why is the model list empty?
 Check that your API Key is correct and your network is working. Some custom services may not support the `/models` endpoint.
 
-### Can I use multiple API providers at once?
+#### Can I use multiple API providers at once?
 Only one provider can be active at a time. Switch providers in the Settings dialog.
 
-### What if the agent behaves incorrectly?
+#### What if the agent behaves incorrectly?
 Check the log panel on the right for error details. Common causes: invalid API Key, non-multimodal model, network timeout.
 
-### How do I reset the configuration?
+#### How do I reset the configuration?
 Close the app, delete `config.json`, and restart. The first-run wizard will appear again.
 
-### How do I use a local model?
+#### How do I use a local model?
 Set the provider to Ollama, enter the local URL (default `http://localhost:11434`) and model name (e.g., `llava`). The model will be pulled automatically on first use.
