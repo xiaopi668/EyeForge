@@ -10,7 +10,7 @@
 
 - **屏幕感知** — 实时截取屏幕画面，发送给多模态大模型分析
 - **智能操控** — AI 自动规划操作步骤，控制鼠标点击、移动、键盘输入
-- **多模型支持** — 支持 OpenAI、Anthropic、Ollama 以及任意兼容 OpenAI API 的自定义服务（需使用多模态模型，如 gpt-4o、claude-3-5-sonnet、llava 等）
+- **多模型支持** — 支持 OpenAI、Anthropic、Ollama 以及任意兼容 OpenAI API 的自定义服务（需使用**多模态**模型，如 gpt-4o、claude-3-5-sonnet、llava 等）
 - **图形界面** — 基于 PyQt5 的现代 GUI，支持深色/浅色主题切换
 - **国际化** — 界面支持中文和 English，一键切换
 - **点击可视化** — 每次点击在屏幕上显示红色光圈动画
