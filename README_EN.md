@@ -10,7 +10,7 @@
 
 - **Screen Awareness** — Captures your screen in real-time and sends it to multimodal AI models for analysis
 - **Intelligent Control** — AI autonomously plans steps, controls mouse clicks, movements, and keyboard input
-- **Multi-Model Support** — Supports OpenAI, Anthropic, Ollama, and any OpenAI-compatible custom API (requires multimodal models such as gpt-4o, claude-3-5-sonnet, llava, etc.)
+- **Multi-Model Support** — Supports OpenAI, Anthropic, Ollama, and any OpenAI-compatible custom API (requires **multimodal** models such as gpt-4o, claude-3-5-sonnet, llava, etc.)
 - **Graphical Interface** — PyQt5-based GUI with dark/light theme switching
 - **Internationalization** — UI supports both 中文 and English, switchable on the fly
 - **Click Visualization** — Displays a red ripple animation on screen for each click action
