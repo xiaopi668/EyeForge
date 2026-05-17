@@ -5,6 +5,9 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
+from src.utils.crypto import decrypt
+
+
 class LLMClient:
     def __init__(self, provider: str = "openai", config: dict = None):
         self.provider = provider
@@ -15,14 +18,14 @@ class LLMClient:
     def _init_client(self):
         if self.provider == "openai":
             import openai
-            api_key = self.config.get("openai_api_key", "")
+            api_key = decrypt(self.config.get("openai_api_key", ""))
             if api_key:
                 self._client = openai.OpenAI(api_key=api_key)
             else:
                 self._client = None
         elif self.provider == "anthropic":
             import anthropic
-            api_key = self.config.get("anthropic_api_key", "")
+            api_key = decrypt(self.config.get("anthropic_api_key", ""))
             if api_key:
                 self._client = anthropic.Anthropic(api_key=api_key)
             else:
@@ -31,10 +34,20 @@ class LLMClient:
             self._client = True
         elif self.provider == "custom":
             import openai
-            api_key = self.config.get("custom_api_key", "")
+            api_key = decrypt(self.config.get("custom_api_key", ""))
             base_url = self.config.get("custom_base_url", "https://api.openai.com/v1")
             if api_key and base_url:
                 self._client = openai.OpenAI(api_key=api_key, base_url=base_url)
+            else:
+                self._client = None
+        elif self.provider == "gemini":
+            import openai
+            api_key = decrypt(self.config.get("gemini_api_key", ""))
+            if api_key:
+                self._client = openai.OpenAI(
+                    api_key=api_key,
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+                )
             else:
                 self._client = None
         else:
@@ -49,6 +62,7 @@ class LLMClient:
             "anthropic": "anthropic_model",
             "ollama": "ollama_model",
             "custom": "custom_model",
+            "gemini": "gemini_model",
         }
         return self.config.get(key_map.get(self.provider, ""), "")
 
@@ -60,6 +74,8 @@ class LLMClient:
         elif self.provider == "ollama":
             return self._chat_ollama(messages, image_base64)
         elif self.provider == "custom":
+            return self._chat_custom(messages, image_base64)
+        elif self.provider == "gemini":
             return self._chat_custom(messages, image_base64)
         return None
 

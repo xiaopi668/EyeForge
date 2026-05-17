@@ -7,6 +7,11 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 
+from src.utils.multimodal import is_multimodal
+from src.utils.crypto import encrypt
+from src.version import VERSION
+from src.utils.updater import check_update
+
 logger = logging.getLogger(__name__)
 
 
@@ -46,6 +51,9 @@ class SettingsDialog(QDialog):
         self._general_tab_widget.setLayout(general_layout)
         tabs.addTab(self._general_tab_widget, self._tr("常规", "General"))
 
+        self._update_tab = self._update_tab()
+        tabs.addTab(self._update_tab, self._tr("更新", "Update"))
+
         layout.addWidget(tabs)
 
         btn_layout = QHBoxLayout()
@@ -58,6 +66,10 @@ class SettingsDialog(QDialog):
         btn_layout.addWidget(cancel_btn)
         layout.addLayout(btn_layout)
 
+    @staticmethod
+    def _check_multimodal(model: str) -> str:
+        return "🟢" if is_multimodal(model) else "⚪"
+
     def _build_provider_section(self, fields: list, pull_provider: str, model_field: QLineEdit) -> QWidget:
         group = QWidget()
         layout = QVBoxLayout(group)
@@ -65,6 +77,15 @@ class SettingsDialog(QDialog):
         form = QFormLayout()
         for field_label, field_widget in fields:
             form.addRow(field_label, field_widget)
+        status_label = QLabel("")
+        form.addRow("", status_label)
+        model_field.textChanged.connect(
+            lambda t, lbl=status_label: lbl.setText(
+                f"🟢 {self._tr('多模态', 'Multimodal')}"
+                if self._check_multimodal(t) == "🟢"
+                else f"⚪ {self._tr('未知', 'Unknown')}"
+            )
+        )
         layout.addLayout(form)
         pull_row = QHBoxLayout()
         pull_status = QLabel("")
@@ -92,6 +113,7 @@ class SettingsDialog(QDialog):
             ("openai", self._tr("OpenAI", "OpenAI")),
             ("anthropic", self._tr("Anthropic", "Anthropic")),
             ("ollama", self._tr("Ollama", "Ollama")),
+            ("gemini", self._tr("Gemini", "Gemini")),
             ("custom", self._tr("自定义", "Custom")),
         ]
         for val, label in provider_names:
@@ -152,6 +174,15 @@ class SettingsDialog(QDialog):
         ], "custom", self._custom_model)
         layout.addWidget(self._custom_group)
 
+        self._gemini_key = QLineEdit(self.config.get("gemini_api_key", ""))
+        self._gemini_key.setEchoMode(QLineEdit.Password)
+        self._gemini_model = QLineEdit(self.config.get("gemini_model", "gemini-2.5-flash"))
+        self._gemini_group = self._build_provider_section([
+            (self._tr("API 密钥:", "API Key:"), self._gemini_key),
+            (self._tr("模型:", "Model:"), self._gemini_model),
+        ], "gemini", self._gemini_model)
+        layout.addWidget(self._gemini_group)
+
         layout.addStretch()
         self._on_provider_change(self.config.get("llm_provider", "openai"))
         return widget
@@ -161,6 +192,7 @@ class SettingsDialog(QDialog):
         self._anthropic_group.setVisible(provider == "anthropic")
         self._ollama_group.setVisible(provider == "ollama")
         self._custom_group.setVisible(provider == "custom")
+        self._gemini_group.setVisible(provider == "gemini")
 
     def _build_test_config(self) -> dict:
         return {
@@ -174,6 +206,8 @@ class SettingsDialog(QDialog):
             "custom_api_key": self._custom_key.text(),
             "custom_base_url": self._custom_url.text(),
             "custom_model": self._custom_model.text(),
+            "gemini_api_key": self._gemini_key.text(),
+            "gemini_model": self._gemini_model.text(),
         }
 
     def _test_connection(self):
@@ -266,6 +300,18 @@ class SettingsDialog(QDialog):
                 raw = resp.json().get("data", [])
                 models = [m["id"] or m.get("name", "") for m in raw]
 
+            elif provider == "gemini":
+                api_key = config.get("gemini_api_key", "").strip()
+                if not api_key:
+                    raise ValueError(self._tr("请先填写 API Key", "Please enter API Key first"))
+                resp = requests.get(
+                    "https://generativelanguage.googleapis.com/v1beta/models?key=" + api_key,
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                raw = resp.json().get("models", [])
+                models = [m["name"].replace("models/", "") for m in raw if "vision" in m.get("supportedGenerationMethods", []) or True]
+
             elif provider == "custom":
                 api_key = config.get("custom_api_key", "").strip()
                 base_url = config.get("custom_base_url", "").strip()
@@ -286,16 +332,18 @@ class SettingsDialog(QDialog):
                 QMessageBox.information(self, self._tr("提示", "Notice"), self._tr("未获取到任何模型", "No models found"))
                 return
 
+            annotated = [f"{m}  {self._check_multimodal(m)}" for m in models]
+
             from PyQt5.QtWidgets import QDialog, QVBoxLayout, QListWidget, QDialogButtonBox
             dialog = QDialog(self)
             dialog.setWindowTitle(f"{self._tr('选择模型', 'Select Model')} - {provider}")
-            dialog.resize(400, 500)
+            dialog.resize(450, 500)
             dl = QVBoxLayout(dialog)
             search = QLineEdit()
             search.setPlaceholderText(self._tr("搜索模型...", "Search models..."))
             dl.addWidget(search)
             lst = QListWidget()
-            lst.addItems(models)
+            lst.addItems(annotated)
             dl.addWidget(lst)
             buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
             buttons.accepted.connect(dialog.accept)
@@ -310,7 +358,7 @@ class SettingsDialog(QDialog):
                     item.setHidden(t.lower() not in item.text().lower())
 
             if dialog.exec_() and lst.currentItem():
-                selected = lst.currentItem().text()
+                selected = lst.currentItem().text().split("  ")[0].strip()
                 model_field.setText(selected)
                 status.setText(self._tr("✓ 已选", "✓ Selected") + f" {selected}")
                 status.setStyleSheet("color: #00b894; font-weight: bold;")
@@ -346,17 +394,77 @@ class SettingsDialog(QDialog):
 
         return widget
 
+    def _update_tab(self):
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        from PyQt5.QtGui import QDesktopServices
+        from PyQt5.QtCore import QUrl
+
+        layout.addWidget(QLabel(
+            f'<b>{"Current Version" if self.lang == "en" else "当前版本"}:</b> v{VERSION}'))
+        layout.addWidget(QLabel(" "))
+
+        self._update_status = QLabel("")
+        layout.addWidget(self._update_status)
+
+        self._update_btn = QPushButton(
+            self._tr("🔄 检查更新", "🔄 Check Update"))
+        self._update_btn.setStyleSheet(
+            "QPushButton { background-color: #6c5ce7; color: white; font-weight: bold; padding: 6px 16px; }"
+            "QPushButton:hover { background-color: #5a4bd1; }")
+        self._update_btn.clicked.connect(self._do_check_update)
+        layout.addWidget(self._update_btn)
+
+        self._update_links = QHBoxLayout()
+        self._gh_btn = QPushButton("📦 GitHub Releases")
+        self._gh_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://github.com/xiaopi668/EyeForge/releases")))
+        self._gc_btn = QPushButton("📦 GitCode Releases")
+        self._gc_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://gitcode.com/xiaopi668/EyeForge/releases")))
+        self._update_links.addWidget(self._gh_btn)
+        self._update_links.addWidget(self._gc_btn)
+        layout.addLayout(self._update_links)
+
+        layout.addStretch()
+        return widget
+
+    def _do_check_update(self):
+        self._update_btn.setEnabled(False)
+        self._update_btn.setText(self._tr("检查中...", "Checking..."))
+        self._update_status.setText("⏳ " + (self._tr("正在检查...", "Checking...")))
+        QApplication.processEvents()
+
+        result = check_update()
+
+        if result["latest"] != "Unknown":
+            info = (f'<b>{"Latest" if self.lang == "en" else "最新版本"}:</b> v{result["latest"]}<br>'
+                    f'<b>{"Source" if self.lang == "en" else "来源"}:</b> {result["source"] or "GitHub"}')
+            if result["update_available"]:
+                info += f'<br><b style="color:#00d4aa;">✶ {"New version available!" if self.lang == "en" else "有新版本可用！"}</b>'
+            else:
+                info += f'<br>✓ {"Up to date" if self.lang == "en" else "已是最新版本"}'
+            self._update_status.setText(info)
+        else:
+            self._update_status.setText(
+                self._tr("✗ 检查更新失败 (网络或服务异常)", "✗ Update check failed (network or service error)"))
+
+        self._update_btn.setEnabled(True)
+        self._update_btn.setText(self._tr("🔄 检查更新", "🔄 Check Update"))
+
     def _save(self):
         self.config["llm_provider"] = self._provider_combo.currentData()
-        self.config["openai_api_key"] = self._openai_key.text()
+        self.config["openai_api_key"] = encrypt(self._openai_key.text())
         self.config["openai_model"] = self._openai_model.text()
-        self.config["anthropic_api_key"] = self._anthropic_key.text()
+        self.config["anthropic_api_key"] = encrypt(self._anthropic_key.text())
         self.config["anthropic_model"] = self._anthropic_model.text()
         self.config["ollama_base_url"] = self._ollama_url.text()
         self.config["ollama_model"] = self._ollama_model.text()
-        self.config["custom_api_key"] = self._custom_key.text()
+        self.config["custom_api_key"] = encrypt(self._custom_key.text())
         self.config["custom_base_url"] = self._custom_url.text()
         self.config["custom_model"] = self._custom_model.text()
+        self.config["gemini_api_key"] = encrypt(self._gemini_key.text())
+        self.config["gemini_model"] = self._gemini_model.text()
         self.config["screenshot_quality"] = self._quality_spin.value()
         self.config["action_delay"] = self._delay_spin.value()
         lang_text = self._lang_combo.currentText()

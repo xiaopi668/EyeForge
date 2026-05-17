@@ -223,3 +223,11 @@ AttributeError: 'MainWindow' object has no attribute 'tray'
 2026-05-17 17:19:11,437 [INFO] src.ui.main_window: [info] 语言已更改，会话将重新开始
 2026-05-17 17:24:39,352 [INFO] src.ui.main_window: [info] Language changed, session will restart
 2026-05-17 17:24:51,312 [INFO] src.ui.main_window: [info] 语言已更改，会话将重新开始
+2026-05-17 21:43:18,040 [WARNING] src.utils.updater: GitHub check failed: 403 Client Error: rate limit exceeded for url: https://api.github.com/repos/xiaopi668/EyeForge/releases/latest
+2026-05-17 21:43:18,677 [WARNING] src.utils.updater: GitCode check failed: 418 Client Error: I'm a Teapot for url: https://gitcode.com/api/v1/repos/xiaopi668/EyeForge/releases/latest
+2026-05-17 21:47:48,591 [WARNING] src.utils.updater: GitHub check failed: 403 Client Error: rate limit exceeded for url: https://api.github.com/repos/xiaopi668/EyeForge/releases/latest
+2026-05-17 21:47:49,103 [WARNING] src.utils.updater: GitCode check failed: 418 Client Error: I'm a Teapot for url: https://gitcode.com/api/v1/repos/xiaopi668/EyeForge/releases/latest
+2026-05-17 21:47:50,618 [WARNING] src.utils.updater: GitHub check failed: 403 Client Error: rate limit exceeded for url: https://api.github.com/repos/xiaopi668/EyeForge/releases/latest
+2026-05-17 21:47:51,195 [WARNING] src.utils.updater: GitCode check failed: 418 Client Error: I'm a Teapot for url: https://gitcode.com/api/v1/repos/xiaopi668/EyeForge/releases/latest
+2026-05-17 21:50:40,548 [WARNING] src.utils.updater: GitHub check failed: 403 Client Error: rate limit exceeded for url: https://api.github.com/repos/xiaopi668/EyeForge/releases/latest
+2026-05-17 21:54:17,722 [WARNING] src.utils.updater: GitHub check failed: 403 Client Error: rate limit exceeded for url: https://api.github.com/repos/xiaopi668/EyeForge/releases/latest

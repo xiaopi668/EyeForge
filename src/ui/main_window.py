@@ -17,6 +17,10 @@ from PyQt5.QtGui import QFont, QIcon, QPixmap, QTextCursor
 from src.ui.settings_dialog import SettingsDialog
 from src.ui.overlay import ClickOverlay, ScreenPreview
 from src.core.agent import EyeForgeAgent, StepCallback
+from src.version import VERSION
+from src.utils.updater import check_update
+
+APP_TITLE = "EyeForge"
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +68,12 @@ class MainWindow(QMainWindow):
         self.agent: Optional[EyeForgeAgent] = None
         self.worker: Optional[AgentWorker] = None
         self.overlay = ClickOverlay()
+
+        icon_path = os.path.join(os.path.dirname(__file__), "..", "..", "src", "logo.ico")
+        if os.path.exists(icon_path):
+            from PyQt5.QtGui import QIcon
+            self.setWindowIcon(QIcon(icon_path))
+
         self._init_ui()
         self._init_tray()
         self._update_size()
@@ -80,11 +90,14 @@ class MainWindow(QMainWindow):
             "custom_api_key": "",
             "custom_base_url": "https://api.openai.com/v1",
             "custom_model": "gpt-4o",
+            "gemini_api_key": "",
+            "gemini_model": "gemini-2.5-flash",
             "screenshot_quality": 95,
             "action_delay": 0.5,
             "language": "zh",
             "theme": "dark",
             "font_size": 9,
+            "wizard_done": True,
         }
         if os.path.exists("config.json"):
             try:
@@ -102,7 +115,7 @@ class MainWindow(QMainWindow):
             self.overlay.resize_to_screen(g.x(), g.y(), g.width(), g.height())
 
     def _init_ui(self):
-        self.setWindowTitle("EyeForge - AI 屏幕操控助手")
+        self.setWindowTitle(f"EyeForge v{VERSION} - AI 屏幕操控助手")
         self.setMinimumSize(900, 650)
         self.resize(1000, 720)
 
@@ -110,7 +123,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
 
-        self.header_label = QLabel("🧿 EyeForge — AI 屏幕操控助手")
+        self.header_label = QLabel(f"🧿 EyeForge v{VERSION} — AI 屏幕操控助手")
         self.header_label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 8px; color: #00d4aa;")
         main_layout.addWidget(self.header_label)
 
@@ -263,8 +276,8 @@ class MainWindow(QMainWindow):
 
     def _retranslate_ui(self, lang: str):
         if lang == "en":
-            self.setWindowTitle("EyeForge - AI Screen Control Assistant")
-            self.header_label.setText("🧿 EyeForge — AI Screen Control Assistant")
+            self.setWindowTitle(f"EyeForge v{VERSION} - AI Screen Control Assistant")
+            self.header_label.setText(f"🧿 EyeForge v{VERSION} — AI Screen Control Assistant")
             self.task_label.setText("Task:")
             self.task_input.setPlaceholderText("Enter a task for AI to execute...")
             self.start_btn.setText("▶ Start")
@@ -273,8 +286,8 @@ class MainWindow(QMainWindow):
             self.status_label.setText("Ready")
             self.preview.set_placeholder("Waiting for screenshot...")
         else:
-            self.setWindowTitle("EyeForge - AI 屏幕操控助手")
-            self.header_label.setText("🧿 EyeForge — AI 屏幕操控助手")
+            self.setWindowTitle(f"EyeForge v{VERSION} - AI 屏幕操控助手")
+            self.header_label.setText(f"🧿 EyeForge v{VERSION} — AI 屏幕操控助手")
             self.task_label.setText("任务:")
             self.task_input.setPlaceholderText("在此输入你想让 AI 执行的任务...")
             self.start_btn.setText("▶ 开始执行")
@@ -287,7 +300,7 @@ class MainWindow(QMainWindow):
 
     def _init_tray(self):
         self.tray = QSystemTrayIcon(self)
-        self.tray.setToolTip("EyeForge")
+        self.tray.setToolTip(f"EyeForge v{VERSION}")
         self._update_tray_menu()
         self.tray.activated.connect(
             lambda reason: self.show() if reason == QSystemTrayIcon.DoubleClick else None
@@ -299,12 +312,79 @@ class MainWindow(QMainWindow):
         tray_menu = QMenu()
         show_action = QAction("Show Window" if lang == "en" else "显示窗口", self)
         show_action.triggered.connect(self.show)
+        update_action = QAction("Check Update" if lang == "en" else "检查更新", self)
+        update_action.triggered.connect(self._check_update_dialog)
         quit_action = QAction("Quit" if lang == "en" else "退出", self)
         quit_action.triggered.connect(QApplication.quit)
         tray_menu.addAction(show_action)
         tray_menu.addSeparator()
+        tray_menu.addAction(update_action)
+        tray_menu.addSeparator()
         tray_menu.addAction(quit_action)
         self.tray.setContextMenu(tray_menu)
+
+    def _check_update_dialog(self):
+        lang = self.config.get("language", "zh")
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QDialogButtonBox
+        from PyQt5.QtGui import QDesktopServices
+        from PyQt5.QtCore import QUrl
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Check Update" if lang == "en" else "检查更新")
+        dialog.resize(420, 220)
+        layout = QVBoxLayout(dialog)
+
+        layout.addWidget(QLabel("⏳ Checking..." if lang == "en" else "⏳ 正在检查更新..."))
+        dialog.show()
+        QApplication.processEvents()
+
+        result = check_update()
+        for i in reversed(range(layout.count())):
+            widget = layout.itemAt(i).widget()
+            if widget:
+                widget.deleteLater()
+
+        current_ver = result["current"]
+        latest_ver = result["latest"]
+        has_update = result["update_available"]
+
+        if latest_ver != "Unknown":
+            status = (f'<b>{"Current" if lang == "en" else "当前版本"}:</b> v{current_ver}<br>'
+                      f'<b>{"Latest" if lang == "en" else "最新版本"}:</b> v{latest_ver}<br>'
+                      f'<b>{"Source" if lang == "en" else "来源"}:</b> {result["source"] or "GitHub"}')
+            layout.addWidget(QLabel(status))
+            layout.addWidget(QLabel(" "))
+            if has_update:
+                info = QLabel('<b style="color:#00d4aa;">✶ New version available!</b>' if lang == "en"
+                              else '<b style="color:#00d4aa;">✶ 有新版本可用！</b>')
+            else:
+                info = QLabel("✓ Up to date" if lang == "en" else "✓ 已是最新版本")
+            layout.addWidget(info)
+            layout.addWidget(QLabel(" "))
+            btn_row = QHBoxLayout()
+            gh_btn = QPushButton("📦 GitHub Releases")
+            gh_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(result["github_url"])))
+            gc_btn = QPushButton("📦 GitCode Releases")
+            gc_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(result["gitcode_url"])))
+            btn_row.addWidget(gh_btn)
+            btn_row.addWidget(gc_btn)
+            layout.addLayout(btn_row)
+        else:
+            layout.addWidget(QLabel("✗ Check failed" if lang == "en" else "✗ 检查更新失败"))
+            layout.addWidget(QLabel("Please check network or visit manually:" if lang == "en" else "请检查网络或手动访问："))
+            btn_row = QHBoxLayout()
+            gh_btn = QPushButton("📦 GitHub")
+            gh_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(result["github_url"])))
+            gc_btn = QPushButton("📦 GitCode")
+            gc_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(result["gitcode_url"])))
+            btn_row.addWidget(gh_btn)
+            btn_row.addWidget(gc_btn)
+
+        layout.addStretch()
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok)
+        buttons.accepted.connect(dialog.accept)
+        layout.addWidget(buttons)
+        dialog.exec_()
 
     def _log(self, message: str, level: str = "info"):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -345,6 +425,23 @@ class MainWindow(QMainWindow):
             msg = "LLM not configured. Please set up API Key in Settings." if lang == "en" else "LLM 未配置，请先在设置中填写 API Key"
             QMessageBox.warning(self, title, msg)
             return
+
+        prov = self.config.get("llm_provider", "")
+        model_key = {"openai": "openai_model", "anthropic": "anthropic_model",
+                     "ollama": "ollama_model", "gemini": "gemini_model", "custom": "custom_model"}
+        model_name = self.config.get(model_key.get(prov, ""), "")
+        from src.utils.multimodal import is_multimodal
+        if model_name and not is_multimodal(model_name):
+            title = "Warning" if lang == "en" else "警告"
+            msg = (f'The model "{model_name}" may not support vision.\n'
+                   f'EyeForge requires a multimodal model.\n\nContinue anyway?') if lang == "en" else (
+                f'模型 "{model_name}" 可能不支持视觉识别。\n'
+                f'EyeForge 需要多模态模型。\n\n是否继续？')
+            ret = QMessageBox.warning(self, title, msg,
+                                      QMessageBox.Yes | QMessageBox.No,
+                                      QMessageBox.No)
+            if ret == QMessageBox.No:
+                return
 
         self.start_btn.setText("⏸ Pause" if lang == "en" else "⏸ 暂停执行")
         self.start_btn.setStyleSheet(
@@ -405,10 +502,8 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"✖ {prefix}: {error[:50]}")
 
     def _on_complete(self):
-        lang = self.config.get("language", "zh")
-        msg = "✅ Task complete!" if lang == "en" else "✅ 任务完成!"
-        self._log(msg, "info")
-        self.status_label.setText(msg)
+        self._log("✅ Task complete!" if self.config.get("language", "en") == "en" else "✅ 任务完成!", "info")
+        self._reset_controls()
 
     def _on_status(self, message: str):
         self._log(message, "info")
@@ -449,9 +544,7 @@ class MainWindow(QMainWindow):
             "QPushButton:hover { background-color: #00b894; }"
         )
         self.task_input.setEnabled(True)
-        expected_status = "⏳ Executing..." if lang == "en" else "⏳ 执行中..."
-        if self.status_label.text() == expected_status:
-            self.status_label.setText("Ready" if lang == "en" else "就绪")
+        self.status_label.setText("Ready" if lang == "en" else "就绪")
 
     def _open_settings(self):
         old_lang = self.config.get("language")

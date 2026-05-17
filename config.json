@@ -1,17 +1,20 @@
 {
-  "llm_provider": "custom",
-  "openai_api_key": "",
+  "language": "zh",
+  "llm_provider": "openai",
+  "openai_api_key": "gAAAAABqCcOSCVgmqoFtABfa0oUh04yZagjU20IuIAP5m6ZHgBVLOjo1MBhaQOvESZCPlVjhW18dTEtBNcG1_FiC4JhXdaZMoQ==",
   "openai_model": "gpt-4o",
   "anthropic_api_key": "",
   "anthropic_model": "claude-3-5-sonnet-20241022",
   "ollama_base_url": "http://localhost:11434",
   "ollama_model": "llava",
-  "custom_api_key": "ee90ba975b11491688dbf3c1465aaff3.aPIjUAIooUdkF0at",
-  "custom_base_url": "https://open.bigmodel.cn/api/paas/v4",
-  "custom_model": "GLM-4.6V-Flash",
+  "custom_api_key": "",
+  "custom_base_url": "https://api.openai.com/v1",
+  "custom_model": "gpt-4o",
+  "gemini_api_key": "",
+  "gemini_model": "gemini-2.5-flash",
   "screenshot_quality": 95,
   "action_delay": 0.5,
-  "language": "zh",
-  "theme": "light",
-  "font_size": 9
+  "theme": "dark",
+  "font_size": 9,
+  "wizard_done": true
 }
