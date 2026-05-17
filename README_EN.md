@@ -3,6 +3,8 @@
 **AI Screen Control Assistant** — Let AI models see your screen and control your mouse and keyboard.
 
 > [中文](README.md) | English
+>
+> 📋 [Changelog](CHANGELOG_EN.md) | 📦 [GitHub Releases](https://github.com/xiaopi668/EyeForge/releases) | 📦 [GitCode Releases](https://gitcode.com/xiaopi668/EyeForge/releases)
 
 
 

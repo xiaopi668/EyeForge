@@ -3,6 +3,8 @@
 **AI 屏幕操控助手** — 让大模型看到你的屏幕，并替你操作鼠标和键盘。
 
 > 中文 | [English](README_EN.md)
+>
+> 📋 [更新日志](CHANGELOG.md) | 📦 [GitHub Releases](https://github.com/xiaopi668/EyeForge/releases) | 📦 [GitCode Releases](https://gitcode.com/xiaopi668/EyeForge/releases)
 
 
 
@@ -48,7 +50,8 @@ python main.py
 - **字体大小** — 可调节全局字体大小（8–14px）
 - **截图质量** — 控制发送给 AI 的图片压缩质量（10–100）
 - **操作延迟** — 调整 AI 执行鼠标/键盘操作间的间隔
-
+## v0.5.1版本更新日志
+    [v0.5.0...v0.5.1](CHANGELOG.md)
 ## 项目结构
 
 ```
