@@ -251,6 +251,27 @@ class CapturePage(QWizardPage):
         layout.addRow("主题 / Theme:", self.theme_combo)
 
 
+class HotkeyPage(QWizardPage):
+    def __init__(self):
+        super().__init__()
+        self.setTitle("快捷键 / Hotkeys")
+        layout = QFormLayout(self)
+
+        self.float_key = QLineEdit("ctrl+shift+e")
+        layout.addRow("快捷输入:", self.float_key)
+        QLabel("Quick Input Hotkey").setStyleSheet("color: #888;")
+
+        self.voice_key = QLineEdit("ctrl+shift+v")
+        layout.addRow("语音输入:", self.voice_key)
+
+        hint = QLabel("确保快捷键不与系统或其他软件冲突")
+        hint.setStyleSheet("color: #888; font-size: 11px;")
+        layout.addRow("", hint)
+        hint2 = QLabel("Make sure the hotkey doesn't conflict with other apps")
+        hint2.setStyleSheet("color: #888; font-size: 11px;")
+        layout.addRow("", hint2)
+
+
 class FirstRunWizard(QWizard):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -258,9 +279,11 @@ class FirstRunWizard(QWizard):
         self.setMinimumSize(540, 460)
         self.lang_page = LanguagePage()
         self.model_page = ModelPage()
+        self.hotkey_page = HotkeyPage()
         self.capture_page = CapturePage()
         self.addPage(self.lang_page)
         self.addPage(self.model_page)
+        self.addPage(self.hotkey_page)
         self.addPage(self.capture_page)
         self.setStartId(0)
 
@@ -278,6 +301,11 @@ class FirstRunWizard(QWizard):
             "action_delay": self.capture_page.delay.value(),
             "theme": self.capture_page.theme_combo.currentText(),
             "font_size": 9, "wizard_done": True,
+            "hotkey_float": self.hotkey_page.float_key.text().strip() or "ctrl+shift+e",
+            "hotkey_voice": self.hotkey_page.voice_key.text().strip() or "ctrl+shift+v",
+            "wakeword_enabled": True,
+            "wakeword_list": "computer",
+            "porcupine_access_key": "",
         }
         prov = cfg["llm_provider"]
         key = self.model_page.api_key.text().strip()

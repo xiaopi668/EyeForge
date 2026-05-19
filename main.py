@@ -75,6 +75,9 @@ def main():
                     "gemini_api_key": "", "gemini_model": "gemini-2.5-flash",
                     "screenshot_quality": 95, "action_delay": 0.5,
                     "theme": "dark", "font_size": 9, "wizard_done": True,
+                    "hotkey_float": "ctrl+shift+e", "hotkey_voice": "ctrl+shift+v",
+                    "wakeword_enabled": True, "wakeword_list": "computer",
+                    "porcupine_access_key": "",
                 }
                 try:
                     os.makedirs("logs", exist_ok=True)

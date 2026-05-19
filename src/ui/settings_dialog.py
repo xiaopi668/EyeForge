@@ -48,7 +48,22 @@ class SettingsDialog(QDialog):
         self._font_spin.setRange(8, 14)
         self._font_spin.setValue(self.config.get("font_size", 9))
         general_layout.addRow(self._tr("字体大小 / Font Size:", "Font Size / 字体大小:"), self._font_spin)
+        self._hotkey_float = QLineEdit(self.config.get("hotkey_float", "ctrl+shift+e"))
+        general_layout.addRow(self._tr("快捷输入 / Quick Input:", "Quick Input / 快捷输入:"), self._hotkey_float)
+        self._hotkey_voice = QLineEdit(self.config.get("hotkey_voice", "ctrl+shift+v"))
+        general_layout.addRow(self._tr("语音输入 / Voice Input:", "Voice Input / 语音输入:"), self._hotkey_voice)
+        self._wakeword_check = QComboBox()
+        self._wakeword_check.addItems(["关闭 / Off", "开启 / On"])
+        self._wakeword_check.setCurrentText("开启 / On" if self.config.get("wakeword_enabled", False) else "关闭 / Off")
+        general_layout.addRow(self._tr("语音唤醒 / Wake Word:", "Wake Word / 语音唤醒:"), self._wakeword_check)
+        self._wakeword_list = QLineEdit(self.config.get("wakeword_list", "computer"))
+        general_layout.addRow(self._tr("唤醒词 / Keywords:", "Keywords / 唤醒词:"), self._wakeword_list)
+        self._porcupine_key = QLineEdit(self.config.get("porcupine_access_key", ""))
+        self._porcupine_key.setEchoMode(QLineEdit.Password)
+        general_layout.addRow(self._tr("Picovoice AccessKey / 密钥:", "Picovoice AccessKey / 密钥:"), self._porcupine_key)
         self._general_tab_widget.setLayout(general_layout)
+        self._wakeword_check.currentIndexChanged.connect(self._toggle_wakeword_rows)
+        self._toggle_wakeword_rows()
         tabs.addTab(self._general_tab_widget, self._tr("常规", "General"))
 
         self._update_tab = self._update_tab()
@@ -65,6 +80,19 @@ class SettingsDialog(QDialog):
         btn_layout.addWidget(save_btn)
         btn_layout.addWidget(cancel_btn)
         layout.addLayout(btn_layout)
+
+    def _toggle_wakeword_rows(self):
+        visible = "开启" in self._wakeword_check.currentText()
+        self._wakeword_list.setVisible(visible)
+        self._porcupine_key.setVisible(visible)
+        layout = self._general_tab_widget.layout()
+        if isinstance(layout, QFormLayout):
+            lbl1 = layout.labelForField(self._wakeword_list)
+            lbl2 = layout.labelForField(self._porcupine_key)
+            if lbl1:
+                lbl1.setVisible(visible)
+            if lbl2:
+                lbl2.setVisible(visible)
 
     @staticmethod
     def _check_multimodal(model: str) -> str:
@@ -492,6 +520,11 @@ class SettingsDialog(QDialog):
         self.config["language"] = "zh" if "zh" in lang_text else "en"
         self.config["theme"] = self._theme_combo.currentText()
         self.config["font_size"] = self._font_spin.value()
+        self.config["hotkey_float"] = self._hotkey_float.text().strip()
+        self.config["hotkey_voice"] = self._hotkey_voice.text().strip()
+        self.config["wakeword_enabled"] = "开启" in self._wakeword_check.currentText()
+        self.config["wakeword_list"] = self._wakeword_list.text().strip()
+        self.config["porcupine_access_key"] = self._porcupine_key.text().strip()
 
         try:
             with open("config.json", "w", encoding="utf-8") as f:

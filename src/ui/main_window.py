@@ -16,9 +16,12 @@ from PyQt5.QtGui import QFont, QIcon, QPixmap, QTextCursor
 
 from src.ui.settings_dialog import SettingsDialog
 from src.ui.overlay import ClickOverlay, ScreenPreview
+from src.ui.float_window import FloatWindow
 from src.core.agent import EyeForgeAgent, StepCallback
 from src.version import VERSION
 from src.utils.updater import check_update
+from src.utils.hotkey import start as hotkey_start, stop_all as hotkey_stop, is_available as hotkey_available, connect as hotkey_connect, disconnect as hotkey_disconnect
+from src.utils.wakeword import start as ww_start, stop as ww_stop, is_available as ww_available
 
 APP_TITLE = "EyeForge"
 
@@ -68,6 +71,8 @@ class MainWindow(QMainWindow):
         self.agent: Optional[EyeForgeAgent] = None
         self.worker: Optional[AgentWorker] = None
         self.overlay = ClickOverlay()
+        self.float_window = FloatWindow(self.config)
+        self.float_window.task_submitted.connect(self._on_float_task)
 
         icon_path = os.path.join(os.path.dirname(__file__), "..", "..", "src", "logo.ico")
         if os.path.exists(icon_path):
@@ -76,6 +81,7 @@ class MainWindow(QMainWindow):
 
         self._init_ui()
         self._init_tray()
+        self._init_hotkeys()
         self._update_size()
 
     def _load_config(self) -> dict:
@@ -299,7 +305,12 @@ class MainWindow(QMainWindow):
             self._update_tray_menu()
 
     def _init_tray(self):
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            return
         self.tray = QSystemTrayIcon(self)
+        icon_path = os.path.join(os.path.dirname(__file__), "..", "..", "src", "logo.ico")
+        if os.path.exists(icon_path):
+            self.tray.setIcon(QIcon(icon_path))
         self.tray.setToolTip(f"EyeForge v{VERSION}")
         self._update_tray_menu()
         self.tray.activated.connect(
@@ -315,13 +326,52 @@ class MainWindow(QMainWindow):
         update_action = QAction("Check Update" if lang == "en" else "检查更新", self)
         update_action.triggered.connect(self._check_update_dialog)
         quit_action = QAction("Quit" if lang == "en" else "退出", self)
-        quit_action.triggered.connect(QApplication.quit)
+        quit_action.triggered.connect(self._quit_app)
         tray_menu.addAction(show_action)
         tray_menu.addSeparator()
         tray_menu.addAction(update_action)
         tray_menu.addSeparator()
         tray_menu.addAction(quit_action)
         self.tray.setContextMenu(tray_menu)
+
+    def _init_hotkeys(self):
+        if not hotkey_available():
+            return
+        hotkey_disconnect(self._on_hotkey)
+        hotkey_connect(self._on_hotkey)
+        self._register_hotkeys()
+        self._init_wakeword()
+
+    def _register_hotkeys(self):
+        hotkey_stop()
+        float_hk = self.config.get("hotkey_float", "ctrl+shift+e")
+        voice_hk = self.config.get("hotkey_voice", "ctrl+shift+v")
+        hotkey_start(float_hk, "float")
+        hotkey_start(voice_hk, "voice")
+
+    def _init_wakeword(self):
+        ww_stop()
+        if not self.config.get("wakeword_enabled", False) or not ww_available():
+            return
+        ww_list = [w.strip() for w in self.config.get("wakeword_list", "computer").split(",") if w.strip()]
+        access_key = self.config.get("porcupine_access_key", "").strip()
+        lang = self.config.get("language", "zh")
+        ww_start(self._on_wakeword, ww_list, access_key, lang)
+
+    def _on_wakeword(self, text: str):
+        self.float_window.show_float()
+        self.float_window._start_voice()
+
+    def _on_hotkey(self, action: str):
+        if action == "float":
+            self.float_window.show_float()
+        elif action == "voice":
+            self.float_window.show_float()
+            self.float_window._start_voice()
+
+    def _on_float_task(self, task: str):
+        self.task_input.setText(task)
+        self._start_task()
 
     def _check_update_dialog(self):
         lang = self.config.get("language", "zh")
@@ -572,6 +622,10 @@ class MainWindow(QMainWindow):
                 self._apply_theme(new_theme)
             self._apply_font(self.config.get("font_size", 9))
             self._retranslate_ui(new_lang)
+            hotkey_stop()
+            self._init_hotkeys()
+            self.float_window.config = self.config
+            self.float_window._retranslate()
 
     def _reset_session(self):
         self.agent = None
@@ -580,4 +634,14 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         if self.agent:
             self.agent.stop()
-        event.accept()
+        if hasattr(self, "tray") and QSystemTrayIcon.isSystemTrayAvailable():
+            self.hide()
+            event.ignore()
+        else:
+            event.accept()
+
+    def _quit_app(self):
+        if self.agent:
+            self.agent.stop()
+        hotkey_stop()
+        QApplication.quit()

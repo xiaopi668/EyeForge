@@ -9,3 +9,6 @@ anthropic>=0.30.0
 pytesseract>=0.3.10
 requests>=2.31.0
 cryptography>=41.0.0
+SpeechRecognition>=3.10.0
+PyAudio>=0.2.14
+pvporcupine>=3.0.0

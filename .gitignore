@@ -1,3 +1,8 @@
 __pycache__/
 logs/
-config.json/
+/config.json
+venv/
+/EyeForge_Setup.exe
+/setup_stub.cs
+/build_installer.py
+/EyeForge_Setup.old

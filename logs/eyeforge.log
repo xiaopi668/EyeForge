@@ -231,3 +231,23 @@ AttributeError: 'MainWindow' object has no attribute 'tray'
 2026-05-17 21:47:51,195 [WARNING] src.utils.updater: GitCode check failed: 418 Client Error: I'm a Teapot for url: https://gitcode.com/api/v1/repos/xiaopi668/EyeForge/releases/latest
 2026-05-17 21:50:40,548 [WARNING] src.utils.updater: GitHub check failed: 403 Client Error: rate limit exceeded for url: https://api.github.com/repos/xiaopi668/EyeForge/releases/latest
 2026-05-17 21:54:17,722 [WARNING] src.utils.updater: GitHub check failed: 403 Client Error: rate limit exceeded for url: https://api.github.com/repos/xiaopi668/EyeForge/releases/latest
+2026-05-18 00:25:49,529 [WARNING] src.utils.hotkey: Failed to remove hotkeys: No module named 'keyboard'
+2026-05-18 00:38:01,150 [WARNING] src.utils.hotkey: Failed to remove hotkeys: No module named 'keyboard'
+2026-05-18 00:38:16,305 [CRITICAL] __main__: Fatal error: 'MainWindow' object has no attribute '_on_float_task'
+Traceback (most recent call last):
+  File "C:\Users\ghr16\Desktop\EyeForge\main.py", line 86, in main
+    window = MainWindow()
+  File "C:\Users\ghr16\Desktop\EyeForge\src\ui\main_window.py", line 74, in __init__
+    self.float_window.task_submitted.connect(self._on_float_task)
+                                             ^^^^^^^^^^^^^^^^^^^
+AttributeError: 'MainWindow' object has no attribute '_on_float_task'
+2026-05-18 00:41:21,164 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+e -> float
+2026-05-18 00:41:21,164 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+v -> voice
+2026-05-18 00:41:45,728 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+e -> float
+2026-05-18 00:41:45,728 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+v -> voice
+2026-05-18 00:46:34,590 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+e -> float
+2026-05-18 00:46:34,591 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+v -> voice
+2026-05-18 01:47:44,228 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+e -> float
+2026-05-18 01:47:44,229 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+v -> voice
+2026-05-18 02:04:01,396 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+e -> float
+2026-05-18 02:04:01,399 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+v -> voice

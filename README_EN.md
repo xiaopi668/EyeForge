@@ -4,35 +4,46 @@
 
 > [中文](README.md) | English
 >
-> 📋 [Changelog](CHANGELOG_EN.md) | 📦 [GitHub Releases](https://github.com/xiaopi668/EyeForge/releases) | 📦 [GitCode Releases](https://gitcode.com/xiaopi668/EyeForge/releases)
-
-
+> 📋 [Changelog](CHANGELOG_EN.md) | 📦 [Download](https://github.com/xiaopi668/EyeForge/releases)
 
 ## Features
 
-- **Screen Awareness** — Captures your screen in real-time and sends it to **multimodal** AI models for analysis
+- **Screen Awareness** — Captures your screen in real-time and sends it to multimodal AI models
 - **Intelligent Control** — AI autonomously plans steps, controls mouse clicks, movements, and keyboard input
-- **Multi-Model Support** — Supports OpenAI, Anthropic, Ollama, and any OpenAI-compatible custom API (requires **multimodal** models such as gpt-4o, claude-3-5-sonnet, llava, etc.)
-- **Graphical Interface** — PyQt5-based GUI with dark/light theme switching
-- **Internationalization** — UI supports both 中文 and English, switchable on the fly
-- **Click Visualization** — Displays a red ripple animation on screen for each click action
+- **Multi-Model Support** — OpenAI, Anthropic, Ollama, Gemini, and any OpenAI-compatible custom API (requires **multimodal** models)
+- **GUI** — PyQt5 modern interface with dark/light themes and instant Chinese/English switching
+- **Global Hotkeys** — `Ctrl+Shift+E` quick input / `Ctrl+Shift+V` voice input, fully customizable
+- **Wake Word** — Picovoice Porcupine offline wake word, no internet needed, zero latency
+- **Voice Input** — Google Web Speech real-time transcription
+- **Click Animation** — Red ripple effect displayed on screen for each click
+- **Encrypted Storage** — API keys encrypted with Fernet + PBKDF2
 
 ## Quick Start
 
 ```bash
-# Install dependencies
 pip install -r requirements.txt
-
-# Launch
 python main.py
 ```
 
+Or download [EyeForge_Setup.exe](https://github.com/xiaopi668/EyeForge/releases) for one-click installation.
+
 ## Usage
 
-1. Click **⚙ Settings**, select an AI provider and enter your API Key
-2. Type a task in the input field (e.g., "Open Calculator and compute 1024×768")
-3. Click **▶ Start** — the AI will analyze your screen and execute actions
-4. Click **⏸ Pause** at any time to suspend the task
+### First Launch
+The setup wizard guides you through: choose language → configure AI model (enter API Key and model name, fetch model list 🟢 multimodal / ⚪ unknown) → set hotkeys → capture settings.
+
+### Running a Task
+Type a task in the input field (e.g., "Open Calculator and compute 1024×768"), click **▶ Start** — the AI analyzes your screen and executes actions. Click **⏸ Pause** at any time.
+
+### Quick Input
+- Press `Ctrl+Shift+E` to open the floating input window
+- Press `Ctrl+Shift+V` for voice input mode
+
+### Wake Word
+Get a free **AccessKey** from [Picovoice Console](https://console.picovoice.ai/) and enter it in Settings → General → Picovoice AccessKey. Enable wake word, say **"Computer"** — the input window appears automatically. See [Wake Word Training Guide](docs/wake-word-training-guide.md) for custom keywords.
+
+### System Tray
+Minimize to tray on close. Double-click to restore, right-click for update check or quit.
 
 ## Supported Models
 
@@ -41,98 +52,94 @@ python main.py
 | OpenAI | API Key (e.g. gpt-4o) |
 | Anthropic | API Key (e.g. claude-3-5-sonnet) |
 | Ollama | Server URL (default http://localhost:11434) |
+| Gemini | API Key (e.g. gemini-2.5-flash) |
 | Custom | API Key + Base URL (any OpenAI-compatible service) |
+
+> All providers **require multimodal models** (vision-capable). Non-vision models cannot analyze screenshots.
 
 ## Personalization
 
-- **Language** — Switch between 中文 and English in Settings, UI updates immediately
-- **Theme** — Dark mode (default) and Light mode supported
-- **Font Size** — Adjustable global font size (8–14px)
-- **Screenshot Quality** — Controls image compression quality sent to AI (10–100)
-- **Action Delay** — Adjusts the interval between AI-executed mouse/keyboard actions
+- **Language** — Switch between 中文 and English instantly
+- **Theme** — Dark (default) and Light modes
+- **Font Size** — 8–14px adjustable
+- **Screenshot Quality** — Compression quality sent to AI (10–100)
+- **Action Delay** — Interval between AI-executed actions
+
+## Tech Stack
+
+- **Python 3.10+** | **PyQt5** — GUI
+- **pyautogui** — Mouse & keyboard control
+- **mss** — High-speed capture
+- **Pillow / OpenCV** — Image processing
+- **cryptography** — API key encryption
+- **pvporcupine** — Offline wake word
+- **SpeechRecognition** — Voice transcription
 
 ## Project Structure
 
 ```
 EyeForge/
 ├── main.py                 # Entry point
-├── config.json             # Configuration file
+├── config.json             # Config (encrypted API keys)
 ├── requirements.txt        # Dependencies
+├── install.bat             # Environment setup script
+├── start.bat / start.exe   # Launcher
 ├── logs/                   # Logs and debug screenshots
-└── src/
-    ├── core/
-    │   ├── screen.py       # Screen capture
-    │   ├── actions.py      # Mouse/keyboard control
-    │   ├── vision.py       # Image processing
-    │   └── agent.py        # AI main loop
-    ├── ai/
-    │   ├── prompts.py      # System prompts
-    │   └── llm_client.py   # LLM client
-    └── ui/
-        ├── main_window.py  # Main window
-        ├── settings_dialog.py # Settings dialog
-        └── overlay.py      # Click animation overlay
+├── src/
+│   ├── version.py          # Version number
+│   ├── logo.ico            # App icon
+│   ├── core/
+│   │   ├── screen.py       # Screen capture
+│   │   ├── actions.py      # Mouse/keyboard control
+│   │   ├── vision.py       # Image processing
+│   │   └── agent.py        # AI main loop
+│   ├── ai/
+│   │   ├── prompts.py      # System prompts (bilingual)
+│   │   └── llm_client.py   # LLM client (5 providers)
+│   ├── ui/
+│   │   ├── main_window.py  # Main window
+│   │   ├── settings_dialog.py # Settings dialog
+│   │   ├── float_window.py # Quick input floating window
+│   │   ├── wizard.py       # First-run wizard
+│   │   └── overlay.py      # Click animation overlay
+│   └── utils/
+│       ├── crypto.py       # Fernet encryption
+│       ├── hotkey.py       # Global hotkeys (RegisterHotKey)
+│       ├── voice.py        # Speech recognition
+│       ├── wakeword.py     # Wake word detection
+│       ├── updater.py      # Update checker
+│       └── multimodal.py   # Multimodal model detection
+└── docs/
+    ├── 唤醒词训练教程.md
+    └── wake-word-training-guide.md
 ```
-
-## Tech Stack
-
-- **Python 3.10+**
-- **PyQt5** — GUI framework
-- **pyautogui** — Mouse and keyboard control
-- **mss** — High-speed screen capture
-- **Pillow / OpenCV** — Image processing
-- **OpenAI / Anthropic SDK** — AI model API calls
-
-## Disclaimer
-
-EyeForge acts solely as a bridge between the AI model and your keyboard and mouse, translating the AI's decisions into actual mouse and keyboard operations. The AI's behavior is determined by its own model and algorithms, not by EyeForge. Users are solely responsible for the outcomes of AI operations. Do not use it on devices you do not own, or leave it running unattended for extended periods.
 
 ## Q&A
 
 #### Which AI models are supported?
-OpenAI (GPT-4o, etc.), Anthropic (Claude 3.5/4, etc.), Ollama (LLaVA and other local models), Gemini, and any OpenAI-compatible custom service.
+OpenAI (GPT-4o etc.), Anthropic (Claude 3.5/4 etc.), Ollama (LLaVA etc.), Gemini, and any OpenAI-compatible custom service.
 
-#### Why is a multimodal model required?
-EyeForge needs the model to "see" the screen to decide the next action. Non-multimodal models (e.g., GPT-3.5, Claude 3 Haiku) cannot process images.
+#### Why multimodal?
+The model needs to "see" screenshots. Non-multimodal models (GPT-3.5, Claude 3 Haiku) cannot process images.
 
-#### How do I configure it?
-On first launch, a setup wizard will guide you through: select language → enter API Key and model name → configure capture settings. You can also modify everything later in the Settings dialog.
+#### Are API keys secure?
+Encrypted with `cryptography` (Fernet + PBKDF2) in `config.json` — never stored in plain text. Do not commit `config.json`.
 
-#### How do I update?
-Go to Settings → Update tab, click "Check Update"; or visit [GitHub Releases](https://github.com/xiaopi668/EyeForge/releases) / [GitCode Releases](https://gitcode.com/xiaopi668/EyeForge/releases) directly.
+#### How to update?
+Settings → Update tab, or visit [GitHub Releases](https://github.com/xiaopi668/EyeForge/releases).
 
-#### Does it support multiple monitors?
-Yes, click animations automatically adapt to all monitors.
+#### How to reset config?
+Delete `config.json` while the app is closed, then restart.
 
-#### How do I switch API providers?
-Go to Settings → AI Model tab, select a different provider, and fill in the corresponding API Key and model name.
-
-#### Is it secure?
-API keys are encrypted with the `cryptography` library and stored in `config.json` — never in plain text. Do not commit `config.json` to public repositories.
-
-#### How do I stop the agent mid-task?
-Click the "⏸ Pause" button to stop the current task. You can then continue or enter a new task.
-
-#### What screen resolutions are supported?
-Any resolution works, including multiple monitors. Operations use ratio coordinates (0~1) and auto-adapt to your actual screen.
-
-#### How do I switch the language?
-Go to Settings → General tab, select "中文" or "English". It takes effect immediately after closing.
+#### Multiple monitors?
+Yes. Operations use ratio coordinates (0~1), click animation adapts to all displays.
 
 #### What does 🟢/⚪ mean?
-When fetching model lists, 🟢 indicates the model supports vision (multimodal), ⚪ means it was not recognized as multimodal. 🟢 models are recommended.
+🟢 = multimodal (vision-capable), ⚪ = not recognized as multimodal. 🟢 recommended.
 
-#### Why is the model list empty?
-Check that your API Key is correct and your network is working. Some custom services may not support the `/models` endpoint.
+#### How to use local models?
+Set provider to Ollama, enter local URL and model name (e.g., `llava`). Model pulled on first use.
 
-#### Can I use multiple API providers at once?
-Only one provider can be active at a time. Switch providers in the Settings dialog.
+## Disclaimer
 
-#### What if the agent behaves incorrectly?
-Check the log panel on the right for error details. Common causes: invalid API Key, non-multimodal model, network timeout.
-
-#### How do I reset the configuration?
-Close the app, delete `config.json`, and restart. The first-run wizard will appear again.
-
-#### How do I use a local model?
-Set the provider to Ollama, enter the local URL (default `http://localhost:11434`) and model name (e.g., `llava`). The model will be pulled automatically on first use.
+EyeForge acts as a bridge between AI and your keyboard/mouse. The AI's behavior is determined by its own model and algorithms. Users are solely responsible for outcomes. Do not use on devices you do not control or leave running unattended.
