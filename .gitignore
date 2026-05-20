@@ -5,4 +5,5 @@ venv/
 /EyeForge_Setup.exe
 /setup_stub.cs
 /build_installer.py
+/start.bat
 /EyeForge_Setup.old

@@ -21,8 +21,11 @@
 ## Quick Start
 
 ```bash
+# Install dependencies
 pip install -r requirements.txt
-python main.py
+
+# Launch
+start.exe
 ```
 
 Or download [EyeForge_Setup.exe](https://github.com/xiaopi668/EyeForge/releases) for one-click installation.

@@ -21,8 +21,11 @@
 ## 快速开始
 
 ```bash
+# 安装依赖
 pip install -r requirements.txt
-python main.py
+
+# 启动
+start.exe
 ```
 
 或下载 [EyeForge_Setup.exe](https://github.com/xiaopi668/EyeForge/releases) 一键安装。
