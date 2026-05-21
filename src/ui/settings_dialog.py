@@ -22,7 +22,8 @@ class SettingsDialog(QDialog):
         self.config = config.copy()
         self.lang = self.config.get("language", "zh")
         self.setWindowTitle("设置 - Settings")
-        self.setMinimumWidth(500)
+        self.setMinimumWidth(480)
+        self.setMinimumHeight(400)
         self._init_ui()
 
     def _tr(self, zh: str, en: str) -> str:
@@ -435,18 +436,7 @@ class SettingsDialog(QDialog):
         self._channel_list.setMinimumWidth(120)
 
         self._channel_stack = QStackedWidget()
-
-        ws_page = self._make_ws_page()
-        wc_page = self._make_wc_page()
-        wcom_page = self._make_wcom_page()
-        dt_page = self._make_dingtalk_page()
-        qq_page = self._make_qq_page()
-
-        self._channel_stack.addWidget(ws_page)
-        self._channel_stack.addWidget(wc_page)
-        self._channel_stack.addWidget(wcom_page)
-        self._channel_stack.addWidget(dt_page)
-        self._channel_stack.addWidget(qq_page)
+        self._channel_pages = {}
 
         channels = [
             ("WebSocket", self._tr("通用 WebSocket", "Generic WebSocket")),
@@ -455,11 +445,27 @@ class SettingsDialog(QDialog):
             (self._tr("钉钉 / DingTalk", "DingTalk / 钉钉"), self._tr("钉钉开放平台机器人", "DingTalk Open Platform bot")),
             (self._tr("QQ", "QQ"), self._tr("go-cqhttp / QQ 官方机器人", "go-cqhttp / QQ Official Bot")),
         ]
+
+        makers = [self._make_ws_page, self._make_wc_page, self._make_wcom_page,
+                  self._make_dingtalk_page, self._make_qq_page]
+
+        placeholder = QWidget()
+        self._channel_stack.addWidget(placeholder)
         for i, (name, tip) in enumerate(channels):
             item = self._channel_list.addItem(name)
             self._channel_list.item(i).setToolTip(tip)
+            self._channel_pages[i] = None
 
-        self._channel_list.currentRowChanged.connect(self._channel_stack.setCurrentIndex)
+        def on_channel_change(idx):
+            if idx < 0 or idx >= len(makers):
+                return
+            if self._channel_pages.get(idx) is None:
+                page = makers[idx]()
+                self._channel_pages[idx] = page
+                self._channel_stack.addWidget(page)
+            self._channel_stack.setCurrentWidget(self._channel_pages[idx])
+
+        self._channel_list.currentRowChanged.connect(on_channel_change)
 
         h_layout = QHBoxLayout()
         h_layout.addWidget(self._channel_list)
@@ -516,19 +522,23 @@ class SettingsDialog(QDialog):
         form.addRow(self._tr("Bot Token:", "Bot Token:"), self._wc_token)
         self._wc_uin = QLineEdit(self.config.get("wc_uin", ""))
         form.addRow(self._tr("Bot UIN:", "Bot UIN:"), self._wc_uin)
+
+        btn_row = QHBoxLayout()
+        self._wc_import_btn = QPushButton(self._tr("📥 从 OpenClaw 导入", "📥 Import from OpenClaw"))
+        self._wc_import_btn.clicked.connect(self._wc_import_from_openclaw)
+        self._wc_scan_btn = QPushButton(self._tr("📱 扫码登录", "📱 QR Login"))
+        self._wc_scan_btn.clicked.connect(self._wc_qr_login)
+        btn_row.addWidget(self._wc_import_btn)
+        btn_row.addWidget(self._wc_scan_btn)
+        form.addRow(btn_row)
+
         tip = QLabel(self._tr(
-            "直接接入微信 iLink Bot API，无需 OpenClaw。\n"
-            "获取 Token 方式:\n"
-            "  npx -y @tencent-weixin/openclaw-weixin-cli install\n"
-            "  openclaw channels login --channel openclaw-weixin\n"
-            "登录后在 ~/.openclaw/state/ 中找到 token 填入上方。\n\n"
-            "后续版本将内置扫码登录流程。",
-            "Native iLink API client, no OpenClaw needed.\n"
-            "To get a token:\n"
-            "  npx -y @tencent-weixin/openclaw-weixin-cli install\n"
-            "  openclaw channels login --channel openclaw-weixin\n"
-            "Find the token in ~/.openclaw/state/ and paste it above.\n\n"
-            "QR login will be built-in in a future release.",
+            "直接接入微信 iLink Bot API，无需 OpenClaw 运行。\n"
+            "点击「导入」从已安装 OpenClaw 的电脑读取 Token。\n"
+            "点击「扫码」通过 QR 码登录微信（需 Node.js）。",
+            "Native iLink API client, no OpenClaw runtime needed.\n"
+            "Click 'Import' to read token from an existing OpenClaw install.\n"
+            "Click 'QR Login' to scan QR with WeChat (requires Node.js).",
         ))
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #888; font-size: 11px;")
@@ -539,6 +549,115 @@ class SettingsDialog(QDialog):
         if wc_mod.is_running():
             self._wc_status.setText(self._tr("状态: 运行中", "Status: Running"))
         return page
+
+    def _wc_import_from_openclaw(self):
+        import os, glob
+        state_dirs = [
+            os.path.expanduser("~/.openclaw/state/"),
+            os.path.expanduser("~/.local/share/openclaw/state/"),
+        ]
+        found = []
+        for d in state_dirs:
+            if os.path.isdir(d):
+                for f in glob.glob(os.path.join(d, "*weixin*")):
+                    found.append(f)
+                for f in glob.glob(os.path.join(d, "*wechat*")):
+                    found.append(f)
+                for f in glob.glob(os.path.join(d, "credentials*")):
+                    found.append(f)
+        if not found:
+            QMessageBox.information(self,
+                self._tr("未找到", "Not Found"),
+                self._tr("未找到 OpenClaw 微信凭证文件。\n请先执行: openclaw channels login --channel openclaw-weixin",
+                         "No OpenClaw WeChat credentials found.\nRun: openclaw channels login --channel openclaw-weixin"))
+            return
+        for path in found:
+            try:
+                with open(path) as f:
+                    data = json.load(f)
+                    t = data.get("token") or data.get("bot_token") or data.get("access_token") or ""
+                    u = data.get("uin") or data.get("bot_uin") or ""
+                    if t:
+                        self._wc_token.setText(t)
+                        if u:
+                            self._wc_uin.setText(u)
+                        QMessageBox.information(self,
+                            self._tr("导入成功", "Imported"),
+                            self._tr(f"已从 {path} 导入 Token", f"Imported token from {path}"))
+                        return
+            except Exception:
+                continue
+        QMessageBox.warning(self,
+            self._tr("导入失败", "Failed"),
+            self._tr("在凭证文件中未找到有效 Token", "No valid token found in credential files"))
+
+    def _wc_qr_login(self):
+        try:
+            import subprocess, tempfile, threading, time
+            from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QApplication
+            from PyQt5.QtCore import Qt, QTimer
+            from PyQt5.QtGui import QPixmap
+
+            dialog = QDialog(self)
+            dialog.setWindowTitle(self._tr("微信扫码登录", "WeChat QR Login"))
+            dialog.setMinimumSize(300, 350)
+            dl = QVBoxLayout(dialog)
+            hint = QLabel(self._tr("正在启动扫码登录...", "Starting QR login..."))
+            hint.setAlignment(Qt.AlignCenter)
+            dl.addWidget(hint)
+            dialog.show()
+            QApplication.processEvents()
+
+            try:
+                result = subprocess.run(
+                    ["npx", "-y", "@tencent-weixin/openclaw-weixin-cli", "login", "--json"],
+                    capture_output=True, text=True, timeout=60
+                )
+            except FileNotFoundError:
+                QMessageBox.warning(self,
+                    self._tr("需要 Node.js", "Node.js required"),
+                    self._tr("扫码登录需要 Node.js (npx)。\n请先安装 Node.js: https://nodejs.org",
+                             "QR login requires Node.js (npx).\nInstall: https://nodejs.org"))
+                dialog.close()
+                return
+            except subprocess.TimeoutExpired:
+                QMessageBox.warning(self,
+                    self._tr("超时", "Timeout"),
+                    self._tr("登录超时，请重试", "Login timed out, please retry"))
+                dialog.close()
+                return
+
+            if result.returncode != 0:
+                hint.setText(self._tr("登录失败，请重试", "Login failed, please retry"))
+                QApplication.processEvents()
+                time.sleep(1.5)
+                dialog.close()
+                return
+
+            try:
+                login_data = json.loads(result.stdout.strip())
+                token = login_data.get("token") or login_data.get("bot_token") or ""
+                uin = login_data.get("uin") or login_data.get("bot_uin") or ""
+                if token:
+                    self._wc_token.setText(token)
+                    if uin:
+                        self._wc_uin.setText(uin)
+                    hint.setText(self._tr("✓ 登录成功！Token 已填入", "✓ Login success! Token filled"))
+                    QApplication.processEvents()
+                    time.sleep(0.8)
+                else:
+                    hint.setText(self._tr("登录成功但未获取到 Token", "Login success but no token found"))
+                    QApplication.processEvents()
+                    time.sleep(1.5)
+            except json.JSONDecodeError:
+                hint.setText(self._tr("登录完成，尝试从 OpenClaw 状态目录导入...", "Login done, importing from OpenClaw state..."))
+                QApplication.processEvents()
+                self._wc_import_from_openclaw()
+                time.sleep(0.5)
+
+            dialog.close()
+        except Exception as e:
+            QMessageBox.critical(self, self._tr("错误", "Error"), str(e))
 
     def _make_wcom_page(self):
         page = QWidget()
