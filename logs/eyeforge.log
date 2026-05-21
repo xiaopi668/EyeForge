@@ -251,3 +251,14 @@ AttributeError: 'MainWindow' object has no attribute '_on_float_task'
 2026-05-18 01:47:44,229 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+v -> voice
 2026-05-18 02:04:01,396 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+e -> float
 2026-05-18 02:04:01,399 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+v -> voice
+2026-05-20 12:34:38,488 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+e -> float
+2026-05-20 12:34:38,489 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+v -> voice
+2026-05-20 12:39:07,484 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+e -> float
+2026-05-20 12:39:07,485 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+v -> voice
+2026-05-20 12:45:02,620 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+e -> float
+2026-05-20 12:45:02,620 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+v -> voice
+2026-05-20 12:45:02,621 [INFO] src.utils.websocket_server: WebSocket server stopped
+2026-05-21 12:31:33,127 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+e -> float
+2026-05-21 12:31:33,129 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+v -> voice
+2026-05-21 12:31:33,129 [INFO] src.utils.websocket_server: WebSocket server stopped
+2026-05-21 12:31:33,135 [INFO] src.channels.wechat_backend: WeChat backend server stopped

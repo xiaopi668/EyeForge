@@ -3,7 +3,8 @@ import logging
 from PyQt5.QtWidgets import (
     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox,
-    QPushButton, QLabel, QTabWidget, QWidget, QMessageBox
+    QPushButton, QLabel, QTabWidget, QWidget, QMessageBox,
+    QListWidget, QStackedWidget, QGroupBox, QFrame
 )
 from PyQt5.QtCore import Qt
 
@@ -66,11 +67,8 @@ class SettingsDialog(QDialog):
         self._toggle_wakeword_rows()
         tabs.addTab(self._general_tab_widget, self._tr("常规", "General"))
 
-        self._ws_tab = self._ws_tab()
-        tabs.addTab(self._ws_tab, self._tr("WebSocket", "WebSocket"))
-
-        self._wc_tab = self._wc_tab()
-        tabs.addTab(self._wc_tab, self._tr("微信后端", "WeChat Backend"))
+        self._channels_tab = self._channels_tab()
+        tabs.addTab(self._channels_tab, self._tr("通道", "Channels"))
 
         self._update_tab = self._update_tab()
         tabs.addTab(self._update_tab, self._tr("更新", "Update"))
@@ -428,87 +426,235 @@ class SettingsDialog(QDialog):
 
         return widget
 
-    def _ws_tab(self):
+    def _channels_tab(self):
         widget = QWidget()
-        layout = QFormLayout(widget)
-        layout.setSpacing(10)
+        layout = QVBoxLayout(widget)
 
+        self._channel_list = QListWidget()
+        self._channel_list.setMaximumWidth(160)
+        self._channel_list.setMinimumWidth(120)
+
+        self._channel_stack = QStackedWidget()
+
+        ws_page = self._make_ws_page()
+        wc_page = self._make_wc_page()
+        wcom_page = self._make_wcom_page()
+        dt_page = self._make_dingtalk_page()
+        qq_page = self._make_qq_page()
+
+        self._channel_stack.addWidget(ws_page)
+        self._channel_stack.addWidget(wc_page)
+        self._channel_stack.addWidget(wcom_page)
+        self._channel_stack.addWidget(dt_page)
+        self._channel_stack.addWidget(qq_page)
+
+        channels = [
+            ("WebSocket", self._tr("通用 WebSocket 回退", "Generic WebSocket fallback")),
+            (self._tr("微信 / WeChat", "WeChat / 微信"), self._tr("腾讯官方 OpenClaw 插件", "Tencent official OpenClaw plugin")),
+            (self._tr("企业微信 / WeCom", "WeCom / 企业微信"), self._tr("企业微信官方 OpenClaw 插件", "WeCom official OpenClaw plugin")),
+            (self._tr("钉钉 / DingTalk", "DingTalk / 钉钉"), self._tr("钉钉开放平台机器人", "DingTalk Open Platform bot")),
+            (self._tr("QQ", "QQ"), self._tr("go-cqhttp / QQ 官方机器人", "go-cqhttp / QQ Official Bot")),
+        ]
+        for i, (name, tip) in enumerate(channels):
+            item = self._channel_list.addItem(name)
+            self._channel_list.item(i).setToolTip(tip)
+
+        self._channel_list.currentRowChanged.connect(self._channel_stack.setCurrentIndex)
+
+        h_layout = QHBoxLayout()
+        h_layout.addWidget(self._channel_list)
+        h_layout.addWidget(self._channel_stack, 1)
+        layout.addLayout(h_layout)
+        layout.addStretch()
+
+        self._channel_list.setCurrentRow(0)
+        return widget
+
+    def _make_ws_page(self):
+        page = QWidget()
+        form = QFormLayout(page)
+        form.setSpacing(10)
         self._ws_enabled = QComboBox()
         self._ws_enabled.addItems(["关闭 / Off", "开启 / On"])
         self._ws_enabled.setCurrentText("开启 / On" if self.config.get("ws_enabled", False) else "关闭 / Off")
-        layout.addRow(self._tr("WebSocket 服务:", "WebSocket Server:"), self._ws_enabled)
-
+        form.addRow(self._tr("服务开关:", "Server:"), self._ws_enabled)
         self._ws_host = QLineEdit(self.config.get("ws_host", "0.0.0.0"))
-        layout.addRow(self._tr("监听地址:", "Listen Host:"), self._ws_host)
-
+        form.addRow(self._tr("监听地址:", "Host:"), self._ws_host)
         self._ws_port = QSpinBox()
         self._ws_port.setRange(1024, 65535)
         self._ws_port.setValue(self.config.get("ws_port", 8765))
-        layout.addRow(self._tr("监听端口:", "Listen Port:"), self._ws_port)
-
+        form.addRow(self._tr("监听端口:", "Port:"), self._ws_port)
         self._ws_token = QLineEdit(self.config.get("ws_token", ""))
         self._ws_token.setEchoMode(QLineEdit.Password)
-        layout.addRow(self._tr("认证令牌:", "Auth Token:"), self._ws_token)
-
+        form.addRow(self._tr("认证令牌:", "Auth Token:"), self._ws_token)
+        tip = QLabel(self._tr(
+            "通用 WebSocket 接入，适用于无官方 API 的平台。\n"
+            "任意客户端连接后发送 JSON 即可执行任务。",
+            "Generic WebSocket endpoint for platforms without official APIs.\n"
+            "Any client can connect and send JSON to execute tasks.",
+        ))
+        tip.setWordWrap(True)
+        tip.setStyleSheet("color: #888; font-size: 11px;")
+        form.addRow(tip)
         self._ws_status = QLabel(self._tr("状态: 未启动", "Status: Not running"))
-        layout.addRow(self._tr("状态:", "Status:"), self._ws_status)
-
-        from src.utils import websocket_server as ws
-        if ws.is_running():
+        form.addRow(self._tr("状态:", "Status:"), self._ws_status)
+        from src.utils import websocket_server as ws_mod
+        if ws_mod.is_running():
             self._ws_status.setText(self._tr("状态: 运行中", "Status: Running"))
+        return page
 
-        return widget
-
-    def _wc_tab(self):
-        widget = QWidget()
-        layout = QFormLayout(widget)
-        layout.setSpacing(10)
-
+    def _make_wc_page(self):
+        page = QWidget()
+        form = QFormLayout(page)
+        form.setSpacing(10)
         self._wc_enabled = QComboBox()
         self._wc_enabled.addItems(["关闭 / Off", "开启 / On"])
         self._wc_enabled.setCurrentText("开启 / On" if self.config.get("wc_enabled", False) else "关闭 / Off")
-        layout.addRow(self._tr("微信后端服务:", "WeChat Backend:"), self._wc_enabled)
-
+        form.addRow(self._tr("服务开关:", "Server:"), self._wc_enabled)
         self._wc_host = QLineEdit(self.config.get("wc_host", "0.0.0.0"))
-        layout.addRow(self._tr("监听地址:", "Listen Host:"), self._wc_host)
-
+        form.addRow(self._tr("监听地址:", "Host:"), self._wc_host)
         self._wc_port = QSpinBox()
         self._wc_port.setRange(1024, 65535)
         self._wc_port.setValue(self.config.get("wc_port", 8800))
-        layout.addRow(self._tr("监听端口:", "Listen Port:"), self._wc_port)
-
+        form.addRow(self._tr("监听端口:", "Port:"), self._wc_port)
         self._wc_token = QLineEdit(self.config.get("wc_token", ""))
         self._wc_token.setEchoMode(QLineEdit.Password)
-        layout.addRow(self._tr("认证令牌:", "Auth Token:"), self._wc_token)
-
-        info = QLabel(
-            self._tr(
-                "需配合腾讯官方 @tencent-weixin/openclaw-weixin 插件使用。\n"
-                "安装方式:\n"
-                "  npx -y @tencent-weixin/openclaw-weixin-cli install\n"
-                "  openclaw plugins install \"@tencent-weixin/openclaw-weixin\"\n"
-                "  openclaw channels login --channel openclaw-weixin\n\n"
-                "然后在插件配置中将后端地址指向本服务。",
-                "Use with Tencent's @tencent-weixin/openclaw-weixin plugin.\n"
-                "Setup:\n"
-                "  npx -y @tencent-weixin/openclaw-weixin-cli install\n"
-                "  openclaw plugins install \"@tencent-weixin/openclaw-weixin\"\n"
-                "  openclaw channels login --channel openclaw-weixin\n\n"
-                "Then configure the plugin to point to this backend.",
-            )
-        )
+        form.addRow(self._tr("认证令牌:", "Auth Token:"), self._wc_token)
+        info = QLabel(self._tr(
+            "需配合腾讯官方 @tencent-weixin/openclaw-weixin 插件使用。\n"
+            "安装方式:\n"
+            "  npx -y @tencent-weixin/openclaw-weixin-cli install\n"
+            "  openclaw plugins install \"@tencent-weixin/openclaw-weixin\"\n"
+            "  openclaw channels login --channel openclaw-weixin\n\n"
+            "然后在插件配置中将后端地址指向本服务。",
+            "Use with Tencent's @tencent-weixin/openclaw-weixin plugin.\n"
+            "Setup:\n"
+            "  npx -y @tencent-weixin/openclaw-weixin-cli install\n"
+            "  openclaw plugins install \"@tencent-weixin/openclaw-weixin\"\n"
+            "  openclaw channels login --channel openclaw-weixin\n\n"
+            "Then configure the plugin to point to this backend.",
+        ))
         info.setWordWrap(True)
         info.setStyleSheet("color: #888; font-size: 11px;")
-        layout.addRow(info)
-
+        form.addRow(info)
         self._wc_status = QLabel(self._tr("状态: 未启动", "Status: Not running"))
-        layout.addRow(self._tr("状态:", "Status:"), self._wc_status)
-
-        from src.channels import wechat_backend as wc
-        if wc.is_running():
+        form.addRow(self._tr("状态:", "Status:"), self._wc_status)
+        from src.channels import wechat_backend as wc_mod
+        if wc_mod.is_running():
             self._wc_status.setText(self._tr("状态: 运行中", "Status: Running"))
+        return page
 
-        return widget
+    def _make_wcom_page(self):
+        page = QWidget()
+        form = QFormLayout(page)
+        form.setSpacing(10)
+        self._wcom_enabled = QComboBox()
+        self._wcom_enabled.addItems(["关闭 / Off", "开启 / On"])
+        self._wcom_enabled.setCurrentText("开启 / On" if self.config.get("wcom_enabled", False) else "关闭 / Off")
+        form.addRow(self._tr("服务开关:", "Server:"), self._wcom_enabled)
+
+        self._wcom_corp_id = QLineEdit(self.config.get("wcom_corp_id", ""))
+        form.addRow(self._tr("企业 ID (CorpID):", "Corp ID:"), self._wcom_corp_id)
+        self._wcom_agent_id = QLineEdit(self.config.get("wcom_agent_id", ""))
+        form.addRow(self._tr("应用 ID (AgentID):", "Agent ID:"), self._wcom_agent_id)
+        self._wcom_secret = QLineEdit(self.config.get("wcom_secret", ""))
+        self._wcom_secret.setEchoMode(QLineEdit.Password)
+        form.addRow(self._tr("应用 Secret:", "Secret:"), self._wcom_secret)
+        self._wcom_token = QLineEdit(self.config.get("wcom_token", ""))
+        form.addRow(self._tr("回调 Token:", "Callback Token:"), self._wcom_token)
+        self._wcom_aes_key = QLineEdit(self.config.get("wcom_aes_key", ""))
+        form.addRow(self._tr("AES 密钥:", "AES Key:"), self._wcom_aes_key)
+
+        tip = QLabel(self._tr(
+            "需配合企业微信官方 @wecom/wecom-openclaw-plugin 插件使用。\n"
+            "安装: openclaw plugins install @wecom/wecom-openclaw-plugin\n"
+            "详情: https://github.com/WecomTeam/wecom-openclaw-plugin",
+            "Use with WeCom official @wecom/wecom-openclaw-plugin.\n"
+            "Install: openclaw plugins install @wecom/wecom-openclaw-plugin\n"
+            "Details: https://github.com/WecomTeam/wecom-openclaw-plugin",
+        ))
+        tip.setWordWrap(True)
+        tip.setStyleSheet("color: #888; font-size: 11px;")
+        form.addRow(tip)
+        return page
+
+    def _make_dingtalk_page(self):
+        page = QWidget()
+        form = QFormLayout(page)
+        form.setSpacing(10)
+        self._dt_enabled = QComboBox()
+        self._dt_enabled.addItems(["关闭 / Off", "开启 / On"])
+        self._dt_enabled.setCurrentText("开启 / On" if self.config.get("dt_enabled", False) else "关闭 / Off")
+        form.addRow(self._tr("服务开关:", "Server:"), self._dt_enabled)
+
+        self._dt_app_key = QLineEdit(self.config.get("dt_app_key", ""))
+        form.addRow(self._tr("AppKey:", "AppKey:"), self._dt_app_key)
+        self._dt_app_secret = QLineEdit(self.config.get("dt_app_secret", ""))
+        self._dt_app_secret.setEchoMode(QLineEdit.Password)
+        form.addRow(self._tr("AppSecret:", "AppSecret:"), self._dt_app_secret)
+        self._dt_webhook = QLineEdit(self.config.get("dt_webhook", ""))
+        form.addRow(self._tr("Webhook URL:", "Webhook URL:"), self._dt_webhook)
+
+        tip = QLabel(self._tr(
+            "通过钉钉开放平台机器人 API 接入。\n"
+            "1. 在钉钉开放平台创建机器人\n"
+            "2. 配置出网 Webhook 地址指向本服务\n"
+            "3. 使用 AppKey/AppSecret 调用服务端 API",
+            "Connect via DingTalk Open Platform Bot API.\n"
+            "1. Create a bot on DingTalk Open Platform\n"
+            "2. Configure outgoing webhook URL to point here\n"
+            "3. Use AppKey/AppSecret for server-side API calls",
+        ))
+        tip.setWordWrap(True)
+        tip.setStyleSheet("color: #888; font-size: 11px;")
+        form.addRow(tip)
+        return page
+
+    def _make_qq_page(self):
+        page = QWidget()
+        form = QFormLayout(page)
+        form.setSpacing(10)
+        self._qq_enabled = QComboBox()
+        self._qq_enabled.addItems(["关闭 / Off", "开启 / On"])
+        self._qq_enabled.setCurrentText("开启 / On" if self.config.get("qq_enabled", False) else "关闭 / Off")
+        form.addRow(self._tr("服务开关:", "Server:"), self._qq_enabled)
+
+        self._qq_mode = QComboBox()
+        self._qq_mode.addItems([
+            self._tr("go-cqhttp WebSocket", "go-cqhttp WebSocket"),
+            self._tr("QQ 官方机器人 API", "QQ Official Bot API"),
+        ])
+        self._qq_mode.setCurrentText(
+            self._qq_mode.itemText(0) if self.config.get("qq_mode", "ws") == "ws"
+            else self._qq_mode.itemText(1)
+        )
+        form.addRow(self._tr("接入方式:", "Mode:"), self._qq_mode)
+
+        self._qq_ws_host = QLineEdit(self.config.get("qq_ws_host", "127.0.0.1"))
+        form.addRow(self._tr("WebSocket 地址:", "WS Host:"), self._qq_ws_host)
+        self._qq_ws_port = QSpinBox()
+        self._qq_ws_port.setRange(1024, 65535)
+        self._qq_ws_port.setValue(self.config.get("qq_ws_port", 6700))
+        form.addRow(self._tr("WebSocket 端口:", "WS Port:"), self._qq_ws_port)
+
+        self._qq_bot_token = QLineEdit(self.config.get("qq_bot_token", ""))
+        self._qq_bot_token.setEchoMode(QLineEdit.Password)
+        form.addRow(self._tr("Bot Token:", "Bot Token:"), self._qq_bot_token)
+        self._qq_bot_appid = QLineEdit(self.config.get("qq_bot_appid", ""))
+        form.addRow(self._tr("Bot AppID:", "Bot AppID:"), self._qq_bot_appid)
+
+        tip = QLabel(self._tr(
+            "go-cqhttp 方式使用 WebSocket 反向连接本服务。\n"
+            "QQ 官方机器人需在 https://bot.q.qq.com 申请。\n"
+            "也可直接使用上方 WebSocket 通道通用接入。",
+            "go-cqhttp connects via reverse WebSocket.\n"
+            "QQ Official Bot requires application at https://bot.q.qq.com.\n"
+            "Can also use the generic WebSocket channel above.",
+        ))
+        tip.setWordWrap(True)
+        tip.setStyleSheet("color: #888; font-size: 11px;")
+        form.addRow(tip)
+        return page
 
     def _update_tab(self):
         widget = QWidget()
@@ -621,6 +767,22 @@ class SettingsDialog(QDialog):
         self.config["wc_host"] = self._wc_host.text().strip()
         self.config["wc_port"] = self._wc_port.value()
         self.config["wc_token"] = self._wc_token.text().strip()
+        self.config["wcom_enabled"] = "开启" in self._wcom_enabled.currentText()
+        self.config["wcom_corp_id"] = self._wcom_corp_id.text().strip()
+        self.config["wcom_agent_id"] = self._wcom_agent_id.text().strip()
+        self.config["wcom_secret"] = self._wcom_secret.text().strip()
+        self.config["wcom_token"] = self._wcom_token.text().strip()
+        self.config["wcom_aes_key"] = self._wcom_aes_key.text().strip()
+        self.config["dt_enabled"] = "开启" in self._dt_enabled.currentText()
+        self.config["dt_app_key"] = self._dt_app_key.text().strip()
+        self.config["dt_app_secret"] = self._dt_app_secret.text().strip()
+        self.config["dt_webhook"] = self._dt_webhook.text().strip()
+        self.config["qq_enabled"] = "开启" in self._qq_enabled.currentText()
+        self.config["qq_mode"] = "ws" if "go-cqhttp" in self._qq_mode.currentText() else "official"
+        self.config["qq_ws_host"] = self._qq_ws_host.text().strip()
+        self.config["qq_ws_port"] = self._qq_ws_port.value()
+        self.config["qq_bot_token"] = self._qq_bot_token.text().strip()
+        self.config["qq_bot_appid"] = self._qq_bot_appid.text().strip()
 
         try:
             with open("config.json", "w", encoding="utf-8") as f:
