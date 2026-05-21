@@ -23,7 +23,7 @@ from src.utils.updater import check_update
 from src.utils.hotkey import start as hotkey_start, stop_all as hotkey_stop, is_available as hotkey_available, connect as hotkey_connect, disconnect as hotkey_disconnect
 from src.utils.wakeword import start as ww_start, stop as ww_stop, is_available as ww_available
 import src.utils.websocket_server as ws_server
-import src.channels.wechat_backend as wc_backend
+import src.channels.wechat as wechat_mod
 
 APP_TITLE = "EyeForge"
 
@@ -406,17 +406,16 @@ class MainWindow(QMainWindow):
             return {"status": "error", "message": str(e)}
 
     def _init_wechat(self):
-        wc_backend.stop()
+        wechat_mod.stop()
         if not self.config.get("wc_enabled", False):
             return
-        host = self.config.get("wc_host", "0.0.0.0")
-        port = self.config.get("wc_port", 8800)
-        token = self.config.get("wc_token", "")
-        wc_backend.set_on_message(self._on_wechat_message)
-        wc_backend.start(host, port, token)
+        token = self.config.get("wc_token", "").strip()
+        uin = self.config.get("wc_uin", "").strip()
+        wechat_mod.set_on_message(self._on_wechat_message)
+        wechat_mod.start(bot_token=token, bot_uin=uin)
         lang = self.config.get("language", "zh")
-        self._log(f"WeChat backend started on http://{host}:{port}" if lang == "en"
-                  else f"微信后端服务已启动 http://{host}:{port}", "info")
+        self._log(f"WeChat iLink client started" if lang == "en"
+                  else f"微信 iLink 客户端已启动", "info")
 
     def _on_wechat_message(self, user_id: str, text: str, context_token: str):
         try:
@@ -431,18 +430,18 @@ class MainWindow(QMainWindow):
                     self.answer = result
                 def on_complete(self):
                     if self.answer:
-                        wc_backend.queue_outgoing(self.uid, self.answer)
+                        wechat_mod.queue_outgoing(self.uid, self.answer)
                 def on_error(self, error: str):
-                    wc_backend.queue_outgoing(self.uid, f"抱歉，处理时出错: {error}")
+                    wechat_mod.queue_outgoing(self.uid, f"抱歉，处理时出错: {error}")
 
             cb = WeChatCallback(user_id, context_token)
             agent = EyeForgeAgent(self.config, cb)
             agent.run(text)
             if cb.answer:
-                wc_backend.queue_outgoing(user_id, cb.answer)
+                wechat_mod.queue_outgoing(user_id, cb.answer)
         except Exception as e:
             logger.error(f"wechat agent error: {e}")
-            wc_backend.queue_outgoing(user_id, f"Error: {str(e)}")
+            wechat_mod.queue_outgoing(user_id, f"Error: {str(e)}")
 
     def _on_hotkey(self, action: str):
         if action == "float":

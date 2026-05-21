@@ -262,3 +262,8 @@ AttributeError: 'MainWindow' object has no attribute '_on_float_task'
 2026-05-21 12:31:33,129 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+v -> voice
 2026-05-21 12:31:33,129 [INFO] src.utils.websocket_server: WebSocket server stopped
 2026-05-21 12:31:33,135 [INFO] src.channels.wechat_backend: WeChat backend server stopped
+2026-05-21 12:39:25,074 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+e -> float
+2026-05-21 12:39:25,075 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+v -> voice
+2026-05-21 12:39:25,076 [INFO] src.utils.websocket_server: WebSocket server stopped
+2026-05-21 12:39:25,086 [INFO] src.channels.wechat_backend: WeChat backend server stopped
+2026-05-21 12:41:47,140 [WARNING] src.utils.updater: GitHub check failed: HTTPSConnectionPool(host='github.com', port=443): Read timed out. (read timeout=10)

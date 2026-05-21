@@ -307,7 +307,7 @@ class FirstRunWizard(QWizard):
             "wakeword_list": "computer",
             "porcupine_access_key": "",
             "ws_enabled": False, "ws_host": "0.0.0.0", "ws_port": 8765, "ws_token": "",
-            "wc_enabled": False, "wc_host": "0.0.0.0", "wc_port": 8800, "wc_token": "",
+            "wc_enabled": False, "wc_token": "", "wc_uin": "",
             "wcom_enabled": False, "wcom_corp_id": "", "wcom_agent_id": "", "wcom_secret": "", "wcom_token": "", "wcom_aes_key": "",
             "dt_enabled": False, "dt_app_key": "", "dt_app_secret": "", "dt_webhook": "",
             "qq_enabled": False, "qq_mode": "ws", "qq_ws_host": "127.0.0.1", "qq_ws_port": 6700, "qq_bot_token": "", "qq_bot_appid": "",

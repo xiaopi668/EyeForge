@@ -449,9 +449,9 @@ class SettingsDialog(QDialog):
         self._channel_stack.addWidget(qq_page)
 
         channels = [
-            ("WebSocket", self._tr("通用 WebSocket 回退", "Generic WebSocket fallback")),
-            (self._tr("微信 / WeChat", "WeChat / 微信"), self._tr("腾讯官方 OpenClaw 插件", "Tencent official OpenClaw plugin")),
-            (self._tr("企业微信 / WeCom", "WeCom / 企业微信"), self._tr("企业微信官方 OpenClaw 插件", "WeCom official OpenClaw plugin")),
+            ("WebSocket", self._tr("通用 WebSocket", "Generic WebSocket")),
+            (self._tr("微信 / WeChat", "WeChat / 微信"), self._tr("原生 iLink API 客户端", "Native iLink API client")),
+            (self._tr("企业微信 / WeCom", "WeCom / 企业微信"), self._tr("企业微信回调服务", "WeCom callback server")),
             (self._tr("钉钉 / DingTalk", "DingTalk / 钉钉"), self._tr("钉钉开放平台机器人", "DingTalk Open Platform bot")),
             (self._tr("QQ", "QQ"), self._tr("go-cqhttp / QQ 官方机器人", "go-cqhttp / QQ Official Bot")),
         ]
@@ -511,35 +511,31 @@ class SettingsDialog(QDialog):
         self._wc_enabled.addItems(["关闭 / Off", "开启 / On"])
         self._wc_enabled.setCurrentText("开启 / On" if self.config.get("wc_enabled", False) else "关闭 / Off")
         form.addRow(self._tr("服务开关:", "Server:"), self._wc_enabled)
-        self._wc_host = QLineEdit(self.config.get("wc_host", "0.0.0.0"))
-        form.addRow(self._tr("监听地址:", "Host:"), self._wc_host)
-        self._wc_port = QSpinBox()
-        self._wc_port.setRange(1024, 65535)
-        self._wc_port.setValue(self.config.get("wc_port", 8800))
-        form.addRow(self._tr("监听端口:", "Port:"), self._wc_port)
         self._wc_token = QLineEdit(self.config.get("wc_token", ""))
         self._wc_token.setEchoMode(QLineEdit.Password)
-        form.addRow(self._tr("认证令牌:", "Auth Token:"), self._wc_token)
-        info = QLabel(self._tr(
-            "需配合腾讯官方 @tencent-weixin/openclaw-weixin 插件使用。\n"
-            "安装方式:\n"
+        form.addRow(self._tr("Bot Token:", "Bot Token:"), self._wc_token)
+        self._wc_uin = QLineEdit(self.config.get("wc_uin", ""))
+        form.addRow(self._tr("Bot UIN:", "Bot UIN:"), self._wc_uin)
+        tip = QLabel(self._tr(
+            "直接接入微信 iLink Bot API，无需 OpenClaw。\n"
+            "获取 Token 方式:\n"
             "  npx -y @tencent-weixin/openclaw-weixin-cli install\n"
-            "  openclaw plugins install \"@tencent-weixin/openclaw-weixin\"\n"
-            "  openclaw channels login --channel openclaw-weixin\n\n"
-            "然后在插件配置中将后端地址指向本服务。",
-            "Use with Tencent's @tencent-weixin/openclaw-weixin plugin.\n"
-            "Setup:\n"
+            "  openclaw channels login --channel openclaw-weixin\n"
+            "登录后在 ~/.openclaw/state/ 中找到 token 填入上方。\n\n"
+            "后续版本将内置扫码登录流程。",
+            "Native iLink API client, no OpenClaw needed.\n"
+            "To get a token:\n"
             "  npx -y @tencent-weixin/openclaw-weixin-cli install\n"
-            "  openclaw plugins install \"@tencent-weixin/openclaw-weixin\"\n"
-            "  openclaw channels login --channel openclaw-weixin\n\n"
-            "Then configure the plugin to point to this backend.",
+            "  openclaw channels login --channel openclaw-weixin\n"
+            "Find the token in ~/.openclaw/state/ and paste it above.\n\n"
+            "QR login will be built-in in a future release.",
         ))
-        info.setWordWrap(True)
-        info.setStyleSheet("color: #888; font-size: 11px;")
-        form.addRow(info)
+        tip.setWordWrap(True)
+        tip.setStyleSheet("color: #888; font-size: 11px;")
+        form.addRow(tip)
         self._wc_status = QLabel(self._tr("状态: 未启动", "Status: Not running"))
         form.addRow(self._tr("状态:", "Status:"), self._wc_status)
-        from src.channels import wechat_backend as wc_mod
+        from src.channels import wechat as wc_mod
         if wc_mod.is_running():
             self._wc_status.setText(self._tr("状态: 运行中", "Status: Running"))
         return page
@@ -566,12 +562,14 @@ class SettingsDialog(QDialog):
         form.addRow(self._tr("AES 密钥:", "AES Key:"), self._wcom_aes_key)
 
         tip = QLabel(self._tr(
-            "需配合企业微信官方 @wecom/wecom-openclaw-plugin 插件使用。\n"
-            "安装: openclaw plugins install @wecom/wecom-openclaw-plugin\n"
-            "详情: https://github.com/WecomTeam/wecom-openclaw-plugin",
-            "Use with WeCom official @wecom/wecom-openclaw-plugin.\n"
-            "Install: openclaw plugins install @wecom/wecom-openclaw-plugin\n"
-            "Details: https://github.com/WecomTeam/wecom-openclaw-plugin",
+            "企业微信自建应用回调服务。\n"
+            "在企业微信管理后台 -> 应用管理 -> 自建应用 -> 接收消息\n"
+            "设置回调 URL 指向本服务地址即可。\n"
+            "详情: https://developer.work.weixin.qq.com/document/path/90238",
+            "WeCom self-built app callback server.\n"
+            "Configure in WeCom admin console -> App Management ->\n"
+            "Self-built App -> Receive Messages -> set callback URL.\n"
+            "Details: https://developer.work.weixin.qq.com/document/path/90238",
         ))
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #888; font-size: 11px;")
@@ -764,9 +762,8 @@ class SettingsDialog(QDialog):
         self.config["ws_port"] = self._ws_port.value()
         self.config["ws_token"] = self._ws_token.text().strip()
         self.config["wc_enabled"] = "开启" in self._wc_enabled.currentText()
-        self.config["wc_host"] = self._wc_host.text().strip()
-        self.config["wc_port"] = self._wc_port.value()
         self.config["wc_token"] = self._wc_token.text().strip()
+        self.config["wc_uin"] = self._wc_uin.text().strip()
         self.config["wcom_enabled"] = "开启" in self._wcom_enabled.currentText()
         self.config["wcom_corp_id"] = self._wcom_corp_id.text().strip()
         self.config["wcom_agent_id"] = self._wcom_agent_id.text().strip()
