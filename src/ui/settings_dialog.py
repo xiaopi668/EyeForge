@@ -66,6 +66,12 @@ class SettingsDialog(QDialog):
         self._toggle_wakeword_rows()
         tabs.addTab(self._general_tab_widget, self._tr("常规", "General"))
 
+        self._ws_tab = self._ws_tab()
+        tabs.addTab(self._ws_tab, self._tr("WebSocket", "WebSocket"))
+
+        self._wc_tab = self._wc_tab()
+        tabs.addTab(self._wc_tab, self._tr("微信后端", "WeChat Backend"))
+
         self._update_tab = self._update_tab()
         tabs.addTab(self._update_tab, self._tr("更新", "Update"))
 
@@ -422,6 +428,88 @@ class SettingsDialog(QDialog):
 
         return widget
 
+    def _ws_tab(self):
+        widget = QWidget()
+        layout = QFormLayout(widget)
+        layout.setSpacing(10)
+
+        self._ws_enabled = QComboBox()
+        self._ws_enabled.addItems(["关闭 / Off", "开启 / On"])
+        self._ws_enabled.setCurrentText("开启 / On" if self.config.get("ws_enabled", False) else "关闭 / Off")
+        layout.addRow(self._tr("WebSocket 服务:", "WebSocket Server:"), self._ws_enabled)
+
+        self._ws_host = QLineEdit(self.config.get("ws_host", "0.0.0.0"))
+        layout.addRow(self._tr("监听地址:", "Listen Host:"), self._ws_host)
+
+        self._ws_port = QSpinBox()
+        self._ws_port.setRange(1024, 65535)
+        self._ws_port.setValue(self.config.get("ws_port", 8765))
+        layout.addRow(self._tr("监听端口:", "Listen Port:"), self._ws_port)
+
+        self._ws_token = QLineEdit(self.config.get("ws_token", ""))
+        self._ws_token.setEchoMode(QLineEdit.Password)
+        layout.addRow(self._tr("认证令牌:", "Auth Token:"), self._ws_token)
+
+        self._ws_status = QLabel(self._tr("状态: 未启动", "Status: Not running"))
+        layout.addRow(self._tr("状态:", "Status:"), self._ws_status)
+
+        from src.utils import websocket_server as ws
+        if ws.is_running():
+            self._ws_status.setText(self._tr("状态: 运行中", "Status: Running"))
+
+        return widget
+
+    def _wc_tab(self):
+        widget = QWidget()
+        layout = QFormLayout(widget)
+        layout.setSpacing(10)
+
+        self._wc_enabled = QComboBox()
+        self._wc_enabled.addItems(["关闭 / Off", "开启 / On"])
+        self._wc_enabled.setCurrentText("开启 / On" if self.config.get("wc_enabled", False) else "关闭 / Off")
+        layout.addRow(self._tr("微信后端服务:", "WeChat Backend:"), self._wc_enabled)
+
+        self._wc_host = QLineEdit(self.config.get("wc_host", "0.0.0.0"))
+        layout.addRow(self._tr("监听地址:", "Listen Host:"), self._wc_host)
+
+        self._wc_port = QSpinBox()
+        self._wc_port.setRange(1024, 65535)
+        self._wc_port.setValue(self.config.get("wc_port", 8800))
+        layout.addRow(self._tr("监听端口:", "Listen Port:"), self._wc_port)
+
+        self._wc_token = QLineEdit(self.config.get("wc_token", ""))
+        self._wc_token.setEchoMode(QLineEdit.Password)
+        layout.addRow(self._tr("认证令牌:", "Auth Token:"), self._wc_token)
+
+        info = QLabel(
+            self._tr(
+                "需配合腾讯官方 @tencent-weixin/openclaw-weixin 插件使用。\n"
+                "安装方式:\n"
+                "  npx -y @tencent-weixin/openclaw-weixin-cli install\n"
+                "  openclaw plugins install \"@tencent-weixin/openclaw-weixin\"\n"
+                "  openclaw channels login --channel openclaw-weixin\n\n"
+                "然后在插件配置中将后端地址指向本服务。",
+                "Use with Tencent's @tencent-weixin/openclaw-weixin plugin.\n"
+                "Setup:\n"
+                "  npx -y @tencent-weixin/openclaw-weixin-cli install\n"
+                "  openclaw plugins install \"@tencent-weixin/openclaw-weixin\"\n"
+                "  openclaw channels login --channel openclaw-weixin\n\n"
+                "Then configure the plugin to point to this backend.",
+            )
+        )
+        info.setWordWrap(True)
+        info.setStyleSheet("color: #888; font-size: 11px;")
+        layout.addRow(info)
+
+        self._wc_status = QLabel(self._tr("状态: 未启动", "Status: Not running"))
+        layout.addRow(self._tr("状态:", "Status:"), self._wc_status)
+
+        from src.channels import wechat_backend as wc
+        if wc.is_running():
+            self._wc_status.setText(self._tr("状态: 运行中", "Status: Running"))
+
+        return widget
+
     def _update_tab(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
@@ -525,6 +613,14 @@ class SettingsDialog(QDialog):
         self.config["wakeword_enabled"] = "开启" in self._wakeword_check.currentText()
         self.config["wakeword_list"] = self._wakeword_list.text().strip()
         self.config["porcupine_access_key"] = self._porcupine_key.text().strip()
+        self.config["ws_enabled"] = "开启" in self._ws_enabled.currentText()
+        self.config["ws_host"] = self._ws_host.text().strip()
+        self.config["ws_port"] = self._ws_port.value()
+        self.config["ws_token"] = self._ws_token.text().strip()
+        self.config["wc_enabled"] = "开启" in self._wc_enabled.currentText()
+        self.config["wc_host"] = self._wc_host.text().strip()
+        self.config["wc_port"] = self._wc_port.value()
+        self.config["wc_token"] = self._wc_token.text().strip()
 
         try:
             with open("config.json", "w", encoding="utf-8") as f:

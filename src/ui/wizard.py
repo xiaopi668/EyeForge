@@ -306,6 +306,8 @@ class FirstRunWizard(QWizard):
             "wakeword_enabled": True,
             "wakeword_list": "computer",
             "porcupine_access_key": "",
+            "ws_enabled": False, "ws_host": "0.0.0.0", "ws_port": 8765, "ws_token": "",
+            "wc_enabled": False, "wc_host": "0.0.0.0", "wc_port": 8800, "wc_token": "",
         }
         prov = cfg["llm_provider"]
         key = self.model_page.api_key.text().strip()

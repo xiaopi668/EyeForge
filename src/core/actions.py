@@ -1,3 +1,4 @@
+import subprocess
 import time
 import pyautogui
 import logging
@@ -54,3 +55,27 @@ class ActionController:
 
     def screenshot(self, region=None):
         return pyautogui.screenshot(region=region)
+
+    def execute_shell(self, command: str, timeout: int = 15) -> str:
+        """Execute a shell command and return its output."""
+        logger.info(f"Shell: {command}")
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+            output = ""
+            if result.stdout:
+                output += result.stdout
+            if result.stderr:
+                output += result.stderr
+            if result.returncode != 0:
+                output += f"\n(exit code: {result.returncode})"
+            return output.strip() or "(no output)"
+        except subprocess.TimeoutExpired:
+            return "(command timed out)"
+        except Exception as e:
+            return f"(error: {e})"

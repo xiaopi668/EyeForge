@@ -12,3 +12,4 @@ cryptography>=41.0.0
 SpeechRecognition>=3.10.0
 PyAudio>=0.2.14
 pvporcupine>=3.0.0
+websockets>=12.0

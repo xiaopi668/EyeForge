@@ -22,6 +22,9 @@ class StepCallback:
     def on_complete(self):
         pass
 
+    def on_result(self, result: str):
+        pass
+
     def on_screenshot(self, image_base64: str):
         pass
 
@@ -53,53 +56,76 @@ class EyeForgeAgent:
         self._sh = 0
         self._has_session = False
 
-    def execute_action(self, action_data) -> bool:
+    def execute_action(self, action_data) -> tuple:
         try:
             if isinstance(action_data, str):
                 action_type = action_data
-                action_data = {}
+                params = {}
             elif isinstance(action_data, dict):
                 action_type = action_data.get("type", "")
+                params = action_data
             else:
-                return False
+                return False, ""
 
             sw, sh = self.screen.get_screen_size()
-            if action_type == "click_ratio":
-                x = int(action_data.get("x_ratio", 0.5) * sw)
-                y = int(action_data.get("y_ratio", 0.5) * sh)
+
+            if action_type == "screen_capture":
+                return False, "screen_capture"
+
+            elif action_type == "shell":
+                cmd = params.get("command", "")
+                if not cmd:
+                    return False, "(shell command is empty)"
+                output = self.actions.execute_shell(cmd)
+                logger.info(f"Shell output: {output[:200]}")
+                return False, f"命令执行结果:\n{output}"
+
+            elif action_type == "click_ratio":
+                xr = params.get("x_ratio", 0.5)
+                yr = params.get("y_ratio", 0.5)
+                x = int(xr * sw)
+                y = int(yr * sh)
                 self.actions.click(x, y)
+                return False, f"已点击 ({xr:.2f}, {yr:.2f})"
+
             elif action_type == "click":
-                self.actions.click(action_data["x"], action_data["y"])
+                self.actions.click(params["x"], params["y"])
             elif action_type == "double_click":
-                self.actions.double_click(action_data["x"], action_data["y"])
+                self.actions.double_click(params["x"], params["y"])
             elif action_type == "right_click":
-                self.actions.right_click(action_data["x"], action_data["y"])
+                self.actions.right_click(params["x"], params["y"])
             elif action_type == "move":
-                self.actions.move(action_data["x"], action_data["y"])
+                self.actions.move(params["x"], params["y"])
             elif action_type == "type":
-                self.actions.type_text(action_data.get("text", ""))
+                self.actions.type_text(params.get("text", ""))
             elif action_type == "press_key":
-                self.actions.press_key(action_data.get("key", ""))
+                self.actions.press_key(params.get("key", ""))
             elif action_type == "hotkey":
-                self.actions.hotkey(*action_data.get("keys", []))
+                self.actions.hotkey(*params.get("keys", []))
             elif action_type == "scroll":
-                self.actions.scroll(action_data.get("clicks", 0))
+                self.actions.scroll(params.get("clicks", 0))
             elif action_type == "wait":
-                time.sleep(action_data.get("seconds", 1))
+                time.sleep(params.get("seconds", 1))
             elif action_type == "complete":
+                result_text = params.get("result", params.get("data", {}).get("result", ""))
                 self.callback.on_complete()
-                return True
+                if result_text:
+                    self.callback.on_result(result_text)
+                return True, ""
             else:
                 logger.warning(f"Unknown action type: {action_type}")
-            return False
+                return False, f"(unknown action: {action_type})"
+
+            return False, f"已执行 {action_type}"
         except Exception as e:
             logger.error(f"Action execution error: {e}")
             self.callback.on_error(str(e))
-            return False
+            return False, f"(error: {e})"
 
     def _init_session(self, task: str):
         self._language = self.config.get("language", "zh")
-        system_prompt = get_system_prompt(self._language)
+        use_vision = self.config.get("use_vision", True)
+        system_prompt = get_system_prompt(self._language, use_vision)
         self._sw, self._sh = self.screen.get_screen_size()
         user_prompt = get_task_prompt(task, self._sw, self._sh, self._language)
         self._messages = [
@@ -138,40 +164,57 @@ class EyeForgeAgent:
 
         self._loop()
 
+    def _process_response(self, response: str) -> tuple:
+        parsed = self.llm.parse_action(response)
+        if not parsed:
+            self.callback.on_error(f"无法解析 LLM 响应: {response[:200]}")
+            return None, None
+
+        thought = parsed.get("thought", "")
+        action = parsed.get("action", {})
+
+        self.callback.on_step({
+            "step": self._step_count,
+            "thought": thought,
+            "action": action,
+            "raw_response": response,
+        })
+
+        return action, thought
+
     def _loop(self):
         while self.running and self._step_count < self.max_steps:
             self._step_count += 1
             try:
-                screenshot = self.screen.capture_pil()
-                image_b64 = self.vision.image_to_base64(screenshot)
-
-                self.callback.on_screenshot(image_b64)
-
-                msg = self._messages[-1]
-                response = self.llm.chat(self._messages, image_base64=image_b64)
+                response = self.llm.chat(self._messages)
                 if not response:
                     self.callback.on_error("LLM 响应为空，请检查 API 配置")
                     break
 
-                parsed = self.llm.parse_action(response)
-                if not parsed:
-                    self.callback.on_error(f"无法解析 LLM 响应: {response[:200]}")
+                action, thought = self._process_response(response)
+                if action is None:
                     continue
 
-                thought = parsed.get("thought", "")
-                action = parsed.get("action", {})
-
-                self.callback.on_step({
-                    "step": self._step_count,
-                    "thought": thought,
-                    "action": action,
-                    "raw_response": response,
-                })
+                if action.get("type") == "screen_capture":
+                    screenshot = self.screen.capture_pil()
+                    image_b64 = self.vision.image_to_base64(screenshot)
+                    self.callback.on_screenshot(image_b64)
+                    self._messages.append({"role": "assistant", "content": response})
+                    self._messages.append({"role": "user", "content": "已截取屏幕，请分析画面并决定下一步操作。"})
+                    response2 = self.llm.chat(self._messages, image_base64=image_b64)
+                    if not response2:
+                        self.callback.on_error("LLM 响应为空")
+                        break
+                    action, thought = self._process_response(response2)
+                    if action is None:
+                        continue
+                    response = response2
 
                 self._messages.append({"role": "assistant", "content": response})
-                self._messages.append({"role": "user", "content": "观察结果：" + thought})
+                done, feedback = self.execute_action(action)
+                if feedback:
+                    self._messages.append({"role": "user", "content": feedback})
 
-                done = self.execute_action(action)
                 if done:
                     break
 

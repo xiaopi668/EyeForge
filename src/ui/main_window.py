@@ -7,7 +7,7 @@ from typing import Optional
 
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QTextEdit, QLineEdit, QPushButton, QLabel,
+    QTextEdit, QLineEdit, QPushButton, QLabel, QCheckBox,
     QMessageBox, QApplication, QSystemTrayIcon, QMenu, QAction,
     QTabWidget, QSplitter, QFrame
 )
@@ -22,6 +22,8 @@ from src.version import VERSION
 from src.utils.updater import check_update
 from src.utils.hotkey import start as hotkey_start, stop_all as hotkey_stop, is_available as hotkey_available, connect as hotkey_connect, disconnect as hotkey_disconnect
 from src.utils.wakeword import start as ww_start, stop as ww_stop, is_available as ww_available
+import src.utils.websocket_server as ws_server
+import src.channels.wechat_backend as wc_backend
 
 APP_TITLE = "EyeForge"
 
@@ -164,6 +166,10 @@ class MainWindow(QMainWindow):
             "QPushButton { background-color: #00d4aa; color: black; font-weight: bold; padding: 8px 16px; }"
             "QPushButton:hover { background-color: #00b894; }"
         )
+        self.vision_check = QCheckBox("👁 屏幕识别")
+        self.vision_check.setChecked(True)
+        self.vision_check.setToolTip("开启后 AI 可截图分析屏幕画面；关闭后仅使用命令模式" if lang == "zh" else
+                                     "When enabled, AI can capture and analyze screen; when disabled, command-only mode")
         self.settings_btn = QPushButton("⚙ 设置")
         self.settings_btn.setStyleSheet("padding: 8px 16px; border: 1px solid #666; border-radius: 4px;")
 
@@ -171,6 +177,7 @@ class MainWindow(QMainWindow):
         self.settings_btn.clicked.connect(self._open_settings)
 
         btn_row.addWidget(self.start_btn)
+        btn_row.addWidget(self.vision_check)
         btn_row.addWidget(self.settings_btn)
         btn_row.addStretch()
         control_layout.addLayout(btn_row)
@@ -287,6 +294,7 @@ class MainWindow(QMainWindow):
             self.task_label.setText("Task:")
             self.task_input.setPlaceholderText("Enter a task for AI to execute...")
             self.start_btn.setText("▶ Start")
+            self.vision_check.setText("👁 Vision")
             self.settings_btn.setText("⚙ Settings")
             self.log_label.setText("Execution Log")
             self.status_label.setText("Ready")
@@ -297,6 +305,7 @@ class MainWindow(QMainWindow):
             self.task_label.setText("任务:")
             self.task_input.setPlaceholderText("在此输入你想让 AI 执行的任务...")
             self.start_btn.setText("▶ 开始执行")
+            self.vision_check.setText("👁 屏幕识别")
             self.settings_btn.setText("⚙ 设置")
             self.log_label.setText("执行日志")
             self.status_label.setText("就绪")
@@ -341,6 +350,8 @@ class MainWindow(QMainWindow):
         hotkey_connect(self._on_hotkey)
         self._register_hotkeys()
         self._init_wakeword()
+        self._init_websocket()
+        self._init_wechat()
 
     def _register_hotkeys(self):
         hotkey_stop()
@@ -360,7 +371,78 @@ class MainWindow(QMainWindow):
 
     def _on_wakeword(self, text: str):
         self.float_window.show_float()
-        self.float_window._start_voice()
+
+    def _init_websocket(self):
+        ws_server.stop()
+        if not ws_server.is_available():
+            return
+        if not self.config.get("ws_enabled", False):
+            return
+        host = self.config.get("ws_host", "0.0.0.0")
+        port = self.config.get("ws_port", 8765)
+        token = self.config.get("ws_token", "")
+        ws_server.start(host, port, token, on_message=self._on_ws_task)
+        lang = self.config.get("language", "zh")
+        self._log(f"WebSocket server started on ws://{host}:{port}" if lang == "en"
+                  else f"WebSocket 服务已启动 ws://{host}:{port}", "info")
+
+    def _on_ws_task(self, task: str) -> dict:
+        try:
+            from src.core.agent import EyeForgeAgent, StepCallback
+
+            class WsCallback(StepCallback):
+                def __init__(self):
+                    self.result = {"status": "error", "message": "unknown"}
+                def on_complete(self):
+                    self.result = {"status": "success", "message": "task completed"}
+                def on_error(self, error: str):
+                    self.result = {"status": "error", "message": error}
+
+            callback = WsCallback()
+            agent = EyeForgeAgent(self.config, callback)
+            agent.run(task)
+            return callback.result
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    def _init_wechat(self):
+        wc_backend.stop()
+        if not self.config.get("wc_enabled", False):
+            return
+        host = self.config.get("wc_host", "0.0.0.0")
+        port = self.config.get("wc_port", 8800)
+        token = self.config.get("wc_token", "")
+        wc_backend.set_on_message(self._on_wechat_message)
+        wc_backend.start(host, port, token)
+        lang = self.config.get("language", "zh")
+        self._log(f"WeChat backend started on http://{host}:{port}" if lang == "en"
+                  else f"微信后端服务已启动 http://{host}:{port}", "info")
+
+    def _on_wechat_message(self, user_id: str, text: str, context_token: str):
+        try:
+            from src.core.agent import EyeForgeAgent, StepCallback
+
+            class WeChatCallback(StepCallback):
+                def __init__(self, uid, ctoken):
+                    self.uid = uid
+                    self.ctoken = ctoken
+                    self.answer = ""
+                def on_result(self, result: str):
+                    self.answer = result
+                def on_complete(self):
+                    if self.answer:
+                        wc_backend.queue_outgoing(self.uid, self.answer)
+                def on_error(self, error: str):
+                    wc_backend.queue_outgoing(self.uid, f"抱歉，处理时出错: {error}")
+
+            cb = WeChatCallback(user_id, context_token)
+            agent = EyeForgeAgent(self.config, cb)
+            agent.run(text)
+            if cb.answer:
+                wc_backend.queue_outgoing(user_id, cb.answer)
+        except Exception as e:
+            logger.error(f"wechat agent error: {e}")
+            wc_backend.queue_outgoing(user_id, f"Error: {str(e)}")
 
     def _on_hotkey(self, action: str):
         if action == "float":
@@ -465,6 +547,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, title, msg)
             return
 
+        use_vision = self.vision_check.isChecked()
+        self.config["use_vision"] = use_vision
+
         if self.agent is None or not self.agent._has_session:
             self.agent = EyeForgeAgent(self.config)
         else:
@@ -476,32 +561,33 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, title, msg)
             return
 
-        prov = self.config.get("llm_provider", "")
-        model_key = {"openai": "openai_model", "anthropic": "anthropic_model",
-                     "ollama": "ollama_model", "gemini": "gemini_model", "custom": "custom_model"}
-        model_name = self.config.get(model_key.get(prov, ""), "")
-        from src.utils.multimodal import is_multimodal
-        if model_name and not is_multimodal(model_name):
-            title = "Warning" if lang == "en" else "警告"
-            msg = (f'The model "{model_name}" may not support vision.\n'
-                   f'EyeForge requires a multimodal model.') if lang == "en" else (
-                f'模型 "{model_name}" 可能不支持视觉识别。\n'
-                f'EyeForge 需要多模态模型。')
-            mb = QMessageBox(self)
-            mb.setWindowTitle(title)
-            mb.setText(msg)
-            btn_continue = mb.addButton("Continue anyway" if lang == "en" else "继续使用", QMessageBox.YesRole)
-            btn_change = mb.addButton("Change Model" if lang == "en" else "更换模型", QMessageBox.NoRole)
-            btn_cancel = mb.addButton("Cancel" if lang == "en" else "取消", QMessageBox.RejectRole)
-            mb.setDefaultButton(btn_continue)
-            mb.setEscapeButton(btn_cancel)
-            mb.exec_()
-            clicked = mb.clickedButton()
-            if clicked == btn_cancel:
-                return
-            if clicked == btn_change:
-                self._open_settings()
-                return
+        if use_vision:
+            prov = self.config.get("llm_provider", "")
+            model_key = {"openai": "openai_model", "anthropic": "anthropic_model",
+                         "ollama": "ollama_model", "gemini": "gemini_model", "custom": "custom_model"}
+            model_name = self.config.get(model_key.get(prov, ""), "")
+            from src.utils.multimodal import is_multimodal
+            if model_name and not is_multimodal(model_name):
+                title = "Warning" if lang == "en" else "警告"
+                msg = (f'The model "{model_name}" may not support vision.\n'
+                       f'EyeForge requires a multimodal model.') if lang == "en" else (
+                    f'模型 "{model_name}" 可能不支持视觉识别。\n'
+                    f'EyeForge 需要多模态模型。')
+                mb = QMessageBox(self)
+                mb.setWindowTitle(title)
+                mb.setText(msg)
+                btn_continue = mb.addButton("Continue anyway" if lang == "en" else "继续使用", QMessageBox.YesRole)
+                btn_change = mb.addButton("Change Model" if lang == "en" else "更换模型", QMessageBox.NoRole)
+                btn_cancel = mb.addButton("Cancel" if lang == "en" else "取消", QMessageBox.RejectRole)
+                mb.setDefaultButton(btn_continue)
+                mb.setEscapeButton(btn_cancel)
+                mb.exec_()
+                clicked = mb.clickedButton()
+                if clicked == btn_cancel:
+                    return
+                if clicked == btn_change:
+                    self._open_settings()
+                    return
 
         self.start_btn.setText("⏸ Pause" if lang == "en" else "⏸ 暂停执行")
         self.start_btn.setStyleSheet(

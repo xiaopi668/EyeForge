@@ -78,6 +78,8 @@ def main():
                     "hotkey_float": "ctrl+shift+e", "hotkey_voice": "ctrl+shift+v",
                     "wakeword_enabled": True, "wakeword_list": "computer",
                     "porcupine_access_key": "",
+                    "ws_enabled": False, "ws_host": "0.0.0.0", "ws_port": 8765, "ws_token": "",
+                    "wc_enabled": False, "wc_host": "0.0.0.0", "wc_port": 8800, "wc_token": "",
                 }
                 try:
                     os.makedirs("logs", exist_ok=True)
