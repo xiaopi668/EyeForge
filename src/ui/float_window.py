@@ -149,6 +149,22 @@ class FloatWindow(QWidget):
         self._scroll.setWidget(self._chat_widget)
         layout.addWidget(self._scroll, 1)
 
+        skills_row = QHBoxLayout()
+        skills_row.setSpacing(4)
+        self._skill_btns = []
+        for sid, label in [("shell", ">_  Shell"), ("capture", "📷 截图"), ("type", "⌨️ 输入"),
+                           ("click", "🖱 点击"), ("wait", "⏱ 等待"), ("hotkey", "🔑 快捷键")]:
+            btn = QPushButton(label)
+            btn.setStyleSheet(
+                "QPushButton { background: #3d3d3d; color: #aaa; border: 1px solid #555; "
+                "border-radius: 4px; padding: 2px 6px; font-size: 11px; }"
+                "QPushButton:hover { background: #00d4aa; color: #111; border-color: #00d4aa; }"
+            )
+            btn.clicked.connect(lambda checked, s=sid: self._insert_skill(s))
+            skills_row.addWidget(btn)
+            self._skill_btns.append(btn)
+        layout.addLayout(skills_row)
+
         self.input_field = QLineEdit()
         self.input_field.setStyleSheet(
             "QLineEdit { padding: 8px; font-size: 13px; border: 1px solid #555; "
@@ -231,7 +247,7 @@ class FloatWindow(QWidget):
                 QTimer.singleShot(0, self.fw._scroll_to_bottom)
             def on_error(self, error: str):
                 self.fw._status_label.setVisible(False)
-                self.fw._add_ai_message(f"✗ {error}")
+                self.fw._add_error_message(f"✗ {error}")
 
         cb = FloatCallback(self)
 
@@ -250,6 +266,35 @@ class FloatWindow(QWidget):
 
     def _tr(self, zh: str, en: str) -> str:
         return en if self.config.get("language", "zh") == "en" else zh
+
+    def _insert_skill(self, skill_id):
+        templates = {
+            "shell": "执行命令：",
+            "capture": "截取屏幕并分析",
+            "type": "输入文本：",
+            "click": "点击坐标 (x, y)：",
+            "wait": "等待 3 秒",
+            "hotkey": "按下快捷键 Ctrl+S",
+        }
+        self.input_field.setText(templates.get(skill_id, ""))
+        self.input_field.setFocus()
+
+    def _add_error_message(self, text: str):
+        bubble = QFrame(self)
+        bubble.setStyleSheet("QFrame { background: transparent; border: none; }")
+        layout = QVBoxLayout(bubble)
+        layout.setContentsMargins(4, 2, 4, 2)
+        label = QLabel(text)
+        label.setWordWrap(True)
+        label.setStyleSheet(
+            "background: #5a1a1a; color: #ff6b6b; padding: 8px 12px; "
+            "border-radius: 8px; font-size: 13px;"
+        )
+        label.setMaximumWidth(400)
+        label.setAlignment(Qt.AlignLeft)
+        layout.addWidget(label, 0, Qt.AlignLeft)
+        self._chat_layout.addWidget(bubble)
+        QTimer.singleShot(0, self._scroll_to_bottom)
 
     def _add_user_message(self, text: str):
         bubble = ChatBubble(text, True, self)
