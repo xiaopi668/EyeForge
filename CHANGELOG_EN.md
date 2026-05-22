@@ -18,3 +18,9 @@
 | 2026-05-17 | Fixed | **Windows taskbar icon not showing** — Added `SetCurrentProcessExplicitAppUserModelID` in `main.py` |
 | 2026-05-17 | Added | **Non-multimodal model warning on settings save** — `_save()` checks model, shows popup with Save Anyway / Cancel options |
 | 2026-05-17 | Fixed | **Agent not stopping after task completion** — `execute_action` now handles string actions (e.g. `"complete"`), prompts emphasize action must be an object |
+| 2026-05-22 | Release | **v1.1 Stable** — Multi-platform channels + stability fixes |
+| 2026-05-22 | Added | **Unified Channels panel** — WebSocket, WeChat (iLink), WeCom, DingTalk, QQ all in one settings tab |
+| 2026-05-22 | Added | **Native WeChat iLink client** — Removed OpenClaw dependency, direct iLink Bot API, QR code login |
+| 2026-05-22 | Added | **QR code login** — Built-in QR display for WeChat channel, no external tools needed |
+| 2026-05-22 | Fixed | **Settings window flicker** — Off-screen construction + QTimer centering, replacing opacity/updatesEnabled hacks |
+| 2026-05-22 | Fixed | **System tray icon disappearing** — Removed QSystemTrayIcon parent, setQuitOnLastWindowClosed=False, explicit show() on minimize, QMenu instance attribute to prevent GC, `_init_tray()` was never called |

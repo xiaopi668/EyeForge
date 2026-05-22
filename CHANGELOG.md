@@ -18,3 +18,9 @@
 | 2026-05-17 | 修复 | **Windows 任务栏图标不显示** — `main.py` 添加 `SetCurrentProcessExplicitAppUserModelID` |
 | 2026-05-17 | 新增 | **设置保存时非多模态模型警告** — `_save()` 中检查模型，弹窗可选继续保存或取消 |
 | 2026-05-17 | 修复 | **任务完成后 Agent 未停止** — `execute_action` 兼容字符串 action（如 `"complete"`），提示强调 action 必须为对象 |
+| 2026-05-22 | 发布 | **v1.1 正式版** — 多平台频道 + 稳定性修复 |
+| 2026-05-22 | 新增 | **统一频道面板** — 设置中整合 WebSocket、微信(iLink)、企业微信、钉钉、QQ 五个频道 |
+| 2026-05-22 | 新增 | **微信原生 iLink 客户端** — 去除 OpenClaw 依赖，直连 iLink 机器人 API，支持二维码登录 |
+| 2026-05-22 | 新增 | **二维码登录** — 微信频道内置二维码展示，无需额外扫码工具 |
+| 2026-05-22 | 修复 | **设置窗口闪烁** — 屏幕外构建 + QTimer 居中，替代 opacity/updatesEnabled 方案 |
+| 2026-05-22 | 修复 | **系统托盘图标消失** — QSystemTrayIcon 去掉 parent 关联、setQuitOnLastWindowClosed=False、最小化时显式 show()、QMenu 实例属性防 GC、`_init_tray()` 未调用导致托盘不创建 |
