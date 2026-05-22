@@ -877,11 +877,7 @@ class SettingsDialog(QDialog):
         return """---
 name: my_skill
 description: My custom skill
-parameters:
-  - name: arg1
-    type: string
-    required: true
-    description: Description of arg1
+parameters: []
 ---
 
 Instructions for the AI about when and how to use this skill.
@@ -922,9 +918,77 @@ Instructions for the AI about when and how to use this skill.
             return
         from src.core.skills import SkillRegistry
         skills_root = os.path.join(os.path.dirname(__file__), "..", "..", "skills")
-        skill_dir = SkillRegistry.create_skill_dir(skills_root, name)
-        SkillRegistry.write_skill_md(skill_dir, md_content)
+        SkillRegistry.create_skill_dir(skills_root, name)
+        SkillRegistry.write_file(os.path.join(skills_root, name, "SKILL.md"), md_content)
         self._rebuild_skill_list()
+        dialog.accept()
+
+    def _edit_skill_dialog(self):
+        item = self._skill_list.currentItem()
+        if not item:
+            return
+        origin = item.data(Qt.UserRole + 2)
+        if origin == "builtin":
+            QMessageBox.information(self, self._tr("提示", "Info"), self._tr("内置技能不可编辑", "Built-in skills cannot be edited"))
+            return
+        from src.core.skills import SkillRegistry
+        files = SkillRegistry.list_skill_files(origin)
+        if not files:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle(self._tr("编辑技能文件", "Edit Skill Files"))
+        dialog.setMinimumSize(600, 500)
+        dlg_layout = QVBoxLayout(dialog)
+
+        file_combo = QComboBox()
+        file_combo.addItems(files)
+        dlg_layout.addWidget(file_combo)
+
+        editor = QTextEdit()
+        editor.setStyleSheet("font-family: monospace; font-size: 12px; background: #1e1e1e; color: #d4d4d4;")
+        dlg_layout.addWidget(editor)
+
+        def load_file():
+            rel = file_combo.currentText()
+            content = SkillRegistry.read_file(os.path.join(origin, rel))
+            if content is not None:
+                editor.setPlainText(content)
+
+        file_combo.currentIndexChanged.connect(load_file)
+        load_file()
+
+        btn_row = QHBoxLayout()
+        save_btn = QPushButton(self._tr("保存", "Save"))
+        cancel_btn = QPushButton(self._tr("取消", "Cancel"))
+        save_btn.clicked.connect(lambda: self._do_edit_file(dialog, origin, file_combo.currentText(), editor.toPlainText()))
+        cancel_btn.clicked.connect(dialog.reject)
+        btn_row.addStretch()
+        btn_row.addWidget(save_btn)
+        btn_row.addWidget(cancel_btn)
+        dlg_layout.addLayout(btn_row)
+        dialog.exec_()
+
+    def _do_edit_file(self, dialog, skill_dir, rel_path, content):
+        from src.core.skills import SkillRegistry
+        SkillRegistry.write_file(os.path.join(skill_dir, rel_path), content)
+        self._rebuild_skill_list()
+        dialog.accept()
+
+    def _delete_skill(self):
+        item = self._skill_list.currentItem()
+        if not item:
+            return
+        origin = item.data(Qt.UserRole + 2)
+        if origin == "builtin":
+            QMessageBox.information(self, self._tr("提示", "Info"), self._tr("内置技能不可删除", "Built-in skills cannot be deleted"))
+            return
+        name = item.data(Qt.UserRole)
+        mb = QMessageBox.question(self, self._tr("确认删除", "Confirm Delete"),
+                                  self._tr(f"确定删除技能 '{name}'？\n{origin}", f"Delete skill '{name}'?\n{origin}"))
+        if mb == QMessageBox.Yes:
+            from src.core.skills import SkillRegistry
+            SkillRegistry.delete_skill_dir(origin)
+            self._rebuild_skill_list()
         dialog.accept()
 
     def _edit_skill_dialog(self):

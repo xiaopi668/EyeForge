@@ -1,6 +1,6 @@
 import os
 import re
-import json
+import subprocess
 import importlib.util
 import logging
 import sys
@@ -18,19 +18,27 @@ class Skill:
         raise NotImplementedError
 
 
-class BuiltinSkill(Skill):
-    """Wraps a Skill subclass as built-in."""
-
-
 class OpenClawSkill(Skill):
-    """Skill loaded from an OpenClaw-compatible directory (SKILL.md + scripts/)."""
+    """Skill loaded from an OpenClaw-compatible directory.
+
+    Structure:
+      skills/<name>/
+        SKILL.md         # Required: YAML frontmatter + instructions
+        reference.md     # Optional: detailed reference docs
+        README.md        # Optional: skill overview
+        examples/        # Optional: example files
+        scripts/         # Optional: executable scripts
+    """
 
     def __init__(self, skill_dir: str):
         self._skill_dir = skill_dir
         self.name = ""
         self.description = ""
         self.parameters = []
-        self._func = None
+        self.instructions = ""
+        self.reference = ""
+        self.examples: list[str] = []
+        self.scripts: list[str] = []
         self._load()
 
     def _load(self):
@@ -39,11 +47,33 @@ class OpenClawSkill(Skill):
             raise FileNotFoundError(f"Missing SKILL.md in {self._skill_dir}")
         with open(md_path, "r", encoding="utf-8") as f:
             content = f.read()
-        meta, _ = self._parse_frontmatter(content)
+        meta, body = self._parse_frontmatter(content)
         self.name = meta.get("name", os.path.basename(self._skill_dir))
         self.description = meta.get("description", "")
         self.parameters = meta.get("parameters", [])
-        self._load_handler()
+        self.instructions = body
+
+        ref_path = os.path.join(self._skill_dir, "reference.md")
+        if os.path.isfile(ref_path):
+            with open(ref_path, "r", encoding="utf-8") as f:
+                self.reference = f.read()
+
+        examples_dir = os.path.join(self._skill_dir, "examples")
+        if os.path.isdir(examples_dir):
+            for fname in sorted(os.listdir(examples_dir)):
+                fpath = os.path.join(examples_dir, fname)
+                if os.path.isfile(fpath) and fname.endswith((".md", ".txt", ".json", ".yaml", ".yml")):
+                    try:
+                        with open(fpath, "r", encoding="utf-8") as f:
+                            self.examples.append(f.read())
+                    except Exception:
+                        pass
+
+        scripts_dir = os.path.join(self._skill_dir, "scripts")
+        if os.path.isdir(scripts_dir):
+            for fname in sorted(os.listdir(scripts_dir)):
+                if fname.endswith(".py") or fname.endswith(".ps1") or fname.endswith(".bat") or fname.endswith(".sh"):
+                    self.scripts.append(os.path.join(scripts_dir, fname))
 
     @staticmethod
     def _parse_frontmatter(text: str):
@@ -79,40 +109,77 @@ class OpenClawSkill(Skill):
                     meta[key] = val
         return meta, body
 
-    def _load_handler(self):
-        scripts_dir = os.path.join(self._skill_dir, "scripts")
-        if not os.path.isdir(scripts_dir):
-            self._func = lambda **kw: f"技能 '{self.name}' 没有 handler"
-            return
-        candidates = ["main.py", "run.py"]
-        found = None
-        for c in candidates:
-            p = os.path.join(scripts_dir, c)
-            if os.path.isfile(p):
-                found = p
-                break
-        if not found:
-            self._func = lambda **kw: f"技能 '{self.name}' 没有 handler"
-            return
-        mod_name = f"_skill_{self.name}_{id(self)}"
-        spec = importlib.util.spec_from_file_location(mod_name, found)
-        if not spec or not spec.loader:
-            self._func = lambda **kw: f"无法加载 {found}"
-            return
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules[mod_name] = mod
-        try:
-            spec.loader.exec_module(mod)
-        except Exception as e:
-            self._func = lambda **kw: f"加载 handler 失败: {e}"
-            return
-        if hasattr(mod, "run") and callable(mod.run):
-            self._func = mod.run
-        else:
-            self._func = lambda **kw: f"未找到 run() 函数"
+    def get_instructions_block(self) -> str:
+        """Returns formatted instructions for system prompt injection."""
+        blocks = [f"## 技能: {self.name}", f"{self.description}\n", self.instructions]
+        if self.reference:
+            blocks.append(f"### 参考文档\n{self.reference}")
+        if self.examples:
+            blocks.append("### 示例")
+            for i, ex in enumerate(self.examples):
+                blocks.append(f"--- 示例 {i+1} ---\n{ex}")
+        if self.scripts:
+            blocks.append("### 可用脚本")
+            for s in self.scripts:
+                blocks.append(f"- `{os.path.basename(s)}`")
+            blocks.append("调用方式: `{\"type\": \"skill\", \"name\": \"<技能名>\", \"script\": \"<脚本名>\", ...参数}`")
+        return "\n\n".join(blocks)
 
     def run(self, **params) -> str:
-        return self._func(**params)
+        script_name = params.pop("script", None)
+        if script_name:
+            script_path = os.path.join(self._skill_dir, "scripts", script_name)
+            if not os.path.isfile(script_path):
+                return f"脚本 '{script_name}' 不存在"
+            return self._run_script(script_path, params)
+        return self.instructions[:500]
+
+    def _run_script(self, script_path: str, params: dict) -> str:
+        ext = os.path.splitext(script_path)[1].lower()
+        try:
+            if ext == ".py":
+                return self._run_python(script_path, params)
+            elif ext == ".ps1":
+                return self._run_powershell(script_path, params)
+            elif ext in (".bat", ".cmd", ".sh"):
+                return self._run_shell(script_path, params)
+            else:
+                return f"不支持的脚本类型: {ext}"
+        except subprocess.TimeoutExpired:
+            return "脚本执行超时"
+        except Exception as e:
+            logger.error(f"Script error: {e}")
+            return f"脚本执行失败: {e}"
+
+    def _run_python(self, path: str, params: dict) -> str:
+        mod_name = f"_skill_script_{os.path.basename(path)}_{id(self)}"
+        spec = importlib.util.spec_from_file_location(mod_name, path)
+        if not spec or not spec.loader:
+            return f"无法加载脚本 {path}"
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        spec.loader.exec_module(mod)
+        if hasattr(mod, "run"):
+            return mod.run(**params)
+        result = subprocess.run(
+            [sys.executable, path] + [f"--{k}={v}" for k, v in params.items()],
+            capture_output=True, text=True, timeout=60,
+        )
+        return (result.stdout or result.stderr)[:3000]
+
+    def _run_powershell(self, path: str, params: dict) -> str:
+        args = [f"-{k} '{v}'" for k, v in params.items()]
+        cmd = ["powershell", "-NoProfile", "-File", path] + args
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        return (result.stdout or result.stderr)[:3000]
+
+    def _run_shell(self, path: str, params: dict) -> str:
+        result = subprocess.run([path], capture_output=True, text=True, timeout=60)
+        return (result.stdout or result.stderr)[:3000]
+
+
+class BuiltinSkill(Skill):
+    """Base for built-in class-based skills."""
 
 
 class SkillRegistry:
@@ -153,22 +220,21 @@ class SkillRegistry:
         return self._origins.get(name, "builtin")
 
     def get_prompt_section(self) -> str:
+        """Returns skill instructions for system prompt injection."""
         skills = self.get_enabled_skills()
         if not skills:
             return ""
-        lines = [
-            "",
-            "### User-Defined Skills (自定义技能)",
-            "调用方式: action type 为 `skill`，参数 `name` 为技能名，其余为技能参数",
-            "",
-            "| 技能 | 参数 | 说明 |",
-            "|------|------|------|",
-        ]
+        blocks = ["## User-Defined Skills (自定义技能)"]
         for s in skills:
-            params = ", ".join(f"`{p['name']}`" for p in s.parameters) if s.parameters else "无"
-            lines.append(f"| `{s.name}` | {params} | {s.description} |")
-        lines.append("")
-        return "\n".join(lines)
+            if isinstance(s, OpenClawSkill):
+                blocks.append(s.get_instructions_block())
+            else:
+                params = ", ".join(f"`{p['name']}`" for p in s.parameters) if s.parameters else "无"
+                blocks.append(
+                    f"### {s.name}\n{s.description}\n参数: {params}\n"
+                    f"调用: {{\"type\": \"skill\", \"name\": \"{s.name}\", ...参数}}"
+                )
+        return "\n\n".join(blocks)
 
     def execute(self, name: str, params: dict) -> tuple:
         skill = self._skills.get(name)
@@ -184,15 +250,14 @@ class SkillRegistry:
             return False, f"Skill '{name}' error: {e}"
 
     def load_from_disk(self, skills_root: str):
-        """Load all skill directories under skills_root (each dir = one OpenClaw skill)."""
+        """Load all skill directories under skills_root."""
         if not os.path.isdir(skills_root):
             return
         for entry in sorted(os.listdir(skills_root)):
             skill_dir = os.path.join(skills_root, entry)
             if not os.path.isdir(skill_dir):
                 continue
-            md_path = os.path.join(skill_dir, "SKILL.md")
-            if not os.path.isfile(md_path):
+            if not os.path.isfile(os.path.join(skill_dir, "SKILL.md")):
                 continue
             try:
                 skill = OpenClawSkill(skill_dir)
@@ -206,66 +271,58 @@ class SkillRegistry:
     def create_skill_dir(skills_root: str, name: str) -> str:
         """Create a new skill directory with template files."""
         skill_dir = os.path.join(skills_root, name)
-        os.makedirs(skill_dir, exist_ok=True)
-        scripts_dir = os.path.join(skill_dir, "scripts")
-        os.makedirs(scripts_dir, exist_ok=True)
-        md_content = f"""---
+        os.makedirs(os.path.join(skill_dir, "scripts"), exist_ok=True)
+        os.makedirs(os.path.join(skill_dir, "examples"), exist_ok=True)
+        md = f"""---
 name: {name}
 description: My custom skill
 parameters: []
 ---
 
-Instructions for the AI about when to use this skill.
+Instructions for the AI about when and how to use this skill.
 """
         with open(os.path.join(skill_dir, "SKILL.md"), "w", encoding="utf-8") as f:
-            f.write(md_content)
-        handler_content = """def run(**params) -> str:
-    # params contains the arguments defined in SKILL.md frontmatter
+            f.write(md)
+        with open(os.path.join(skill_dir, "reference.md"), "w", encoding="utf-8") as f:
+            f.write("# Reference\n\nDetailed reference documentation for this skill.\n")
+        handler = """def run(**params) -> str:
     return f"Executed with: {params}"
 """
-        with open(os.path.join(scripts_dir, "main.py"), "w", encoding="utf-8") as f:
-            f.write(handler_content)
+        with open(os.path.join(skill_dir, "scripts", "main.py"), "w", encoding="utf-8") as f:
+            f.write(handler)
         return skill_dir
 
     @staticmethod
     def delete_skill_dir(skill_dir: str):
-        """Delete a skill directory and all its contents."""
+        import shutil
         if os.path.isdir(skill_dir):
-            import shutil
             shutil.rmtree(skill_dir)
 
     @staticmethod
-    def read_skill_md(skill_dir: str) -> Optional[str]:
-        md_path = os.path.join(skill_dir, "SKILL.md")
-        if os.path.isfile(md_path):
-            with open(md_path, "r", encoding="utf-8") as f:
+    def read_file(path: str) -> Optional[str]:
+        if os.path.isfile(path):
+            with open(path, "r", encoding="utf-8") as f:
                 return f.read()
         return None
 
     @staticmethod
-    def write_skill_md(skill_dir: str, content: str):
-        md_path = os.path.join(skill_dir, "SKILL.md")
-        with open(md_path, "w", encoding="utf-8") as f:
+    def write_file(path: str, content: str):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
             f.write(content)
 
     @staticmethod
-    def read_handler(skill_dir: str) -> Optional[str]:
-        for c in ["main.py", "run.py"]:
-            p = os.path.join(skill_dir, "scripts", c)
-            if os.path.isfile(p):
-                with open(p, "r", encoding="utf-8") as f:
-                    return f.read()
-        return None
-
-    @staticmethod
-    def write_handler(skill_dir: str, code: str):
-        scripts_dir = os.path.join(skill_dir, "scripts")
-        os.makedirs(scripts_dir, exist_ok=True)
-        with open(os.path.join(scripts_dir, "main.py"), "w", encoding="utf-8") as f:
-            f.write(code)
+    def list_skill_files(skill_dir: str) -> list[str]:
+        """List all files in a skill directory."""
+        result = []
+        for root, dirs, files in os.walk(skill_dir):
+            for fname in files:
+                rel = os.path.relpath(os.path.join(root, fname), skill_dir)
+                result.append(rel)
+        return sorted(result)
 
 
-class BuiltinShellSkill(Skill):
+class BuiltinShellSkill(BuiltinSkill):
     name = "run_shell"
     description = "执行系统 Shell 命令（PowerShell/cmd）并返回输出"
     parameters = [{"name": "command", "type": "string", "required": True, "description": "要执行的命令"}]
@@ -280,7 +337,7 @@ class BuiltinShellSkill(Skill):
         return output[:2000] if output else "(no output)"
 
 
-class BuiltinOpenAppSkill(Skill):
+class BuiltinOpenAppSkill(BuiltinSkill):
     name = "open_app"
     description = "打开应用程序（按名称搜索并启动）"
     parameters = [{"name": "app_name", "type": "string", "required": True, "description": "应用程序名称"}]
@@ -294,7 +351,7 @@ class BuiltinOpenAppSkill(Skill):
             return f"启动失败: {e}"
 
 
-class BuiltinWriteFileSkill(Skill):
+class BuiltinWriteFileSkill(BuiltinSkill):
     name = "write_file"
     description = "写入内容到文件"
     parameters = [
@@ -312,7 +369,7 @@ class BuiltinWriteFileSkill(Skill):
             return f"写入失败: {e}"
 
 
-class BuiltinReadFileSkill(Skill):
+class BuiltinReadFileSkill(BuiltinSkill):
     name = "read_file"
     description = "读取文件内容"
     parameters = [{"name": "path", "type": "string", "required": True, "description": "文件路径"}]
@@ -325,7 +382,7 @@ class BuiltinReadFileSkill(Skill):
             return f"读取失败: {e}"
 
 
-class BuiltinGetClipboardSkill(Skill):
+class BuiltinGetClipboardSkill(BuiltinSkill):
     name = "get_clipboard"
     description = "获取剪贴板内容"
     parameters = []
@@ -336,20 +393,18 @@ class BuiltinGetClipboardSkill(Skill):
             return pyperclip.paste()
         except ImportError:
             try:
-                import subprocess
                 result = subprocess.run(["powershell", "-NoProfile", "Get-Clipboard"], capture_output=True, text=True)
                 return result.stdout.strip() or "(empty)"
             except Exception as e:
                 return f"获取剪贴板失败: {e}"
 
 
-class BuiltinSetClipboardSkill(Skill):
+class BuiltinSetClipboardSkill(BuiltinSkill):
     name = "set_clipboard"
     description = "设置剪贴板内容"
     parameters = [{"name": "text", "type": "string", "required": True, "description": "要设置的文本"}]
 
     def run(self, text: str = "") -> str:
-        import subprocess
         try:
             import pyperclip
             pyperclip.copy(text)
