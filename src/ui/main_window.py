@@ -83,6 +83,8 @@ class MainWindow(QMainWindow):
 
         self._init_ui()
         self._update_preview_placeholder()
+        self._init_hotkeys_and_size()
+        self._init_tray()
 
     def _update_preview_placeholder(self):
         lang = self.config.get("language", "zh")
@@ -91,7 +93,7 @@ class MainWindow(QMainWindow):
         else:
             self.preview.set_placeholder("Screen recognition disabled" if lang == "en" else "屏幕识别已关闭")
 
-    def _init_tray(self):
+    def _init_hotkeys_and_size(self):
         self._init_hotkeys()
         self._update_size()
 
