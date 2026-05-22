@@ -28,6 +28,9 @@ class StepCallback:
     def on_screenshot(self, image_base64: str):
         pass
 
+    def on_shell_command(self, command: str, output: str):
+        pass
+
     def on_status(self, message: str):
         pass
 
@@ -77,6 +80,7 @@ class EyeForgeAgent:
                 if not cmd:
                     return False, "(shell command is empty)"
                 output = self.actions.execute_shell(cmd)
+                self.callback.on_shell_command(cmd, output)
                 logger.info(f"Shell output: {output[:200]}")
                 return False, f"命令执行结果:\n{output}"
 

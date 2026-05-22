@@ -71,7 +71,6 @@ class MainWindow(QMainWindow):
         self.worker: Optional[AgentWorker] = None
         self.overlay = ClickOverlay()
         self.float_window = FloatWindow(self.config)
-        self.float_window.task_submitted.connect(self._on_float_task)
 
         icon_path = os.path.join(os.path.dirname(__file__), "..", "..", "src", "logo.ico")
         if os.path.exists(icon_path):
@@ -396,15 +395,25 @@ class MainWindow(QMainWindow):
 
     def _on_ws_task(self, task: str) -> dict:
         try:
-            from src.ai.llm_client import LLMClient
-            llm = LLMClient(
-                provider=self.config.get("llm_provider", "openai"),
-                config=self.config,
-            )
-            if not llm.is_available():
-                return {"status": "error", "message": "LLM not configured"}
-            response = llm.simple_chat(task)
-            return {"status": "success", "message": response or "no response"}
+            from src.core.agent import EyeForgeAgent, StepCallback
+
+            class WsCallback(StepCallback):
+                def __init__(self):
+                    self.result = {"status": "success", "message": ""}
+                    self.error = None
+                def on_result(self, msg: str):
+                    self.result["message"] = msg
+                def on_complete(self):
+                    pass
+                def on_error(self, err: str):
+                    self.error = err
+
+            cb = WsCallback()
+            agent = EyeForgeAgent(self.config, cb)
+            agent.run(task)
+            if cb.error:
+                return {"status": "error", "message": cb.error}
+            return cb.result
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
@@ -421,19 +430,27 @@ class MainWindow(QMainWindow):
 
     def _on_wechat_message(self, user_id: str, text: str, context_token: str):
         try:
-            from src.ai.llm_client import LLMClient
-            llm = LLMClient(
-                provider=self.config.get("llm_provider", "openai"),
-                config=self.config,
-            )
-            if not llm.is_available():
-                wechat_mod.queue_outgoing(user_id, "LLM 未配置，请在设置中填写 API Key")
-                return
-            reply = llm.simple_chat(text)
-            if reply:
-                wechat_mod.queue_outgoing(user_id, reply)
+            from src.core.agent import EyeForgeAgent, StepCallback
+
+            class WeChatCallback(StepCallback):
+                def __init__(self, uid):
+                    self.uid = uid
+                    self.answer = ""
+                def on_result(self, result: str):
+                    self.answer = result
+                def on_complete(self):
+                    if self.answer:
+                        wechat_mod.queue_outgoing(self.uid, self.answer)
+                def on_error(self, error: str):
+                    wechat_mod.queue_outgoing(self.uid, f"抱歉，处理时出错: {error}")
+
+            cb = WeChatCallback(user_id)
+            agent = EyeForgeAgent(self.config, cb)
+            agent.run(text)
+            if cb.answer:
+                wechat_mod.queue_outgoing(user_id, cb.answer)
         except Exception as e:
-            logger.error(f"wechat chat error: {e}")
+            logger.error(f"wechat agent error: {e}")
             wechat_mod.queue_outgoing(user_id, f"Error: {str(e)}")
 
     def _on_hotkey(self, action: str):
@@ -442,10 +459,6 @@ class MainWindow(QMainWindow):
         elif action == "voice":
             self.float_window.show_float()
             self.float_window._start_voice()
-
-    def _on_float_task(self, task: str):
-        self.task_input.setText(task)
-        self._start_task()
 
     def _check_update_dialog(self):
         lang = self.config.get("language", "zh")
