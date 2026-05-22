@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import importlib.util
 import logging
@@ -17,28 +18,108 @@ class Skill:
         raise NotImplementedError
 
 
-class UserSkillFunc(Skill):
-    """Wrapper for function-based user skills (simple format)."""
+class BuiltinSkill(Skill):
+    """Wraps a Skill subclass as built-in."""
 
-    def __init__(self, name: str, description: str, parameters: list, func):
-        self.name = name
-        self.description = description
-        self.parameters = parameters
-        self._func = func
+
+class OpenClawSkill(Skill):
+    """Skill loaded from an OpenClaw-compatible directory (SKILL.md + scripts/)."""
+
+    def __init__(self, skill_dir: str):
+        self._skill_dir = skill_dir
+        self.name = ""
+        self.description = ""
+        self.parameters = []
+        self._func = None
+        self._load()
+
+    def _load(self):
+        md_path = os.path.join(self._skill_dir, "SKILL.md")
+        if not os.path.isfile(md_path):
+            raise FileNotFoundError(f"Missing SKILL.md in {self._skill_dir}")
+        with open(md_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        meta, _ = self._parse_frontmatter(content)
+        self.name = meta.get("name", os.path.basename(self._skill_dir))
+        self.description = meta.get("description", "")
+        self.parameters = meta.get("parameters", [])
+        self._load_handler()
+
+    @staticmethod
+    def _parse_frontmatter(text: str):
+        """Parse YAML frontmatter between --- markers. Returns (dict, body)."""
+        text = text.strip()
+        if not text.startswith("---"):
+            return {}, text
+        parts = text.split("---", 2)
+        if len(parts) < 3:
+            return {}, text
+        yaml_block = parts[1].strip()
+        body = parts[2].strip()
+        meta = {}
+        current_list_key = None
+        for line in yaml_block.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("- "):
+                if current_list_key:
+                    val = line[2:].strip().strip('"').strip("'")
+                    meta.setdefault(current_list_key, []).append(val)
+                continue
+            if ":" in line:
+                key, _, val = line.partition(":")
+                key = key.strip()
+                val = val.strip().strip('"').strip("'")
+                if not val:
+                    current_list_key = key
+                    meta[key] = []
+                else:
+                    current_list_key = None
+                    meta[key] = val
+        return meta, body
+
+    def _load_handler(self):
+        scripts_dir = os.path.join(self._skill_dir, "scripts")
+        if not os.path.isdir(scripts_dir):
+            self._func = lambda **kw: f"技能 '{self.name}' 没有 handler"
+            return
+        candidates = ["main.py", "run.py"]
+        found = None
+        for c in candidates:
+            p = os.path.join(scripts_dir, c)
+            if os.path.isfile(p):
+                found = p
+                break
+        if not found:
+            self._func = lambda **kw: f"技能 '{self.name}' 没有 handler"
+            return
+        mod_name = f"_skill_{self.name}_{id(self)}"
+        spec = importlib.util.spec_from_file_location(mod_name, found)
+        if not spec or not spec.loader:
+            self._func = lambda **kw: f"无法加载 {found}"
+            return
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        try:
+            spec.loader.exec_module(mod)
+        except Exception as e:
+            self._func = lambda **kw: f"加载 handler 失败: {e}"
+            return
+        if hasattr(mod, "run") and callable(mod.run):
+            self._func = mod.run
+        else:
+            self._func = lambda **kw: f"未找到 run() 函数"
 
     def run(self, **params) -> str:
         return self._func(**params)
-
-
-class UserSkillClass(Skill):
-    """Thin wrapper so any Skill subclass is usable directly."""
 
 
 class SkillRegistry:
     def __init__(self):
         self._skills: dict[str, Skill] = {}
         self._enabled: set[str] = set()
-        self._origins: dict[str, str] = {}  # skill_name -> "builtin" or filepath
+        self._origins: dict[str, str] = {}
 
     def register(self, skill: Skill, origin: str = "builtin"):
         self._skills[skill.name] = skill
@@ -102,73 +183,86 @@ class SkillRegistry:
             logger.error(f"Skill '{name}' error: {e}")
             return False, f"Skill '{name}' error: {e}"
 
-    def load_from_disk(self, skills_dir: str):
-        """Load all .py skill files from a directory."""
-        if not os.path.isdir(skills_dir):
+    def load_from_disk(self, skills_root: str):
+        """Load all skill directories under skills_root (each dir = one OpenClaw skill)."""
+        if not os.path.isdir(skills_root):
             return
-        sys.path.insert(0, os.path.dirname(skills_dir))
-        try:
-            for fname in sorted(os.listdir(skills_dir)):
-                if not fname.endswith(".py") or fname == "__init__.py":
-                    continue
-                fpath = os.path.join(skills_dir, fname)
-                try:
-                    self._load_skill_file(fpath, fname[:-3])
-                except Exception as e:
-                    logger.error(f"Failed to load skill {fname}: {e}")
-        finally:
-            if sys.path and sys.path[0] == os.path.dirname(skills_dir):
-                sys.path.pop(0)
-
-    def _load_skill_file(self, fpath: str, mod_name: str):
-        spec = importlib.util.spec_from_file_location(mod_name, fpath)
-        if not spec or not spec.loader:
-            return
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-
-        # Class-based: find Skill subclasses
-        loaded = False
-        for attr_name in dir(mod):
-            attr = getattr(mod, attr_name)
-            if isinstance(attr, type) and issubclass(attr, Skill) and attr is not Skill and attr is not UserSkillClass:
-                inst = attr()
-                if inst.name:
-                    self.register(inst, origin=fpath)
-                    loaded = True
-
-        # Function-based: SKILL_NAME, SKILL_DESCRIPTION, SKILL_PARAMETERS + run()
-        if not loaded and hasattr(mod, "SKILL_NAME") and hasattr(mod, "run"):
-            name = mod.SKILL_NAME
-            desc = getattr(mod, "SKILL_DESCRIPTION", "")
-            params = getattr(mod, "SKILL_PARAMETERS", [])
-            func = mod.run
-            skill = UserSkillFunc(name, desc, params, func)
-            self.register(skill, origin=fpath)
-            loaded = True
+        for entry in sorted(os.listdir(skills_root)):
+            skill_dir = os.path.join(skills_root, entry)
+            if not os.path.isdir(skill_dir):
+                continue
+            md_path = os.path.join(skill_dir, "SKILL.md")
+            if not os.path.isfile(md_path):
+                continue
+            try:
+                skill = OpenClawSkill(skill_dir)
+                if skill.name:
+                    self.register(skill, origin=skill_dir)
+                    logger.info(f"Loaded skill '{skill.name}' from {skill_dir}")
+            except Exception as e:
+                logger.error(f"Failed to load skill from {skill_dir}: {e}")
 
     @staticmethod
-    def save_user_skill(skills_dir: str, name: str, code: str):
-        """Save a user skill .py file to disk."""
-        os.makedirs(skills_dir, exist_ok=True)
-        fpath = os.path.join(skills_dir, f"{name}.py")
-        with open(fpath, "w", encoding="utf-8") as f:
-            f.write(code)
-        return fpath
+    def create_skill_dir(skills_root: str, name: str) -> str:
+        """Create a new skill directory with template files."""
+        skill_dir = os.path.join(skills_root, name)
+        os.makedirs(skill_dir, exist_ok=True)
+        scripts_dir = os.path.join(skill_dir, "scripts")
+        os.makedirs(scripts_dir, exist_ok=True)
+        md_content = f"""---
+name: {name}
+description: My custom skill
+parameters: []
+---
+
+Instructions for the AI about when to use this skill.
+"""
+        with open(os.path.join(skill_dir, "SKILL.md"), "w", encoding="utf-8") as f:
+            f.write(md_content)
+        handler_content = """def run(**params) -> str:
+    # params contains the arguments defined in SKILL.md frontmatter
+    return f"Executed with: {params}"
+"""
+        with open(os.path.join(scripts_dir, "main.py"), "w", encoding="utf-8") as f:
+            f.write(handler_content)
+        return skill_dir
 
     @staticmethod
-    def delete_user_skill(skills_dir: str, name: str):
-        fpath = os.path.join(skills_dir, f"{name}.py")
-        if os.path.exists(fpath):
-            os.remove(fpath)
+    def delete_skill_dir(skill_dir: str):
+        """Delete a skill directory and all its contents."""
+        if os.path.isdir(skill_dir):
+            import shutil
+            shutil.rmtree(skill_dir)
 
     @staticmethod
-    def get_skill_code(skills_dir: str, name: str) -> Optional[str]:
-        fpath = os.path.join(skills_dir, f"{name}.py")
-        if os.path.exists(fpath):
-            with open(fpath, "r", encoding="utf-8") as f:
+    def read_skill_md(skill_dir: str) -> Optional[str]:
+        md_path = os.path.join(skill_dir, "SKILL.md")
+        if os.path.isfile(md_path):
+            with open(md_path, "r", encoding="utf-8") as f:
                 return f.read()
         return None
+
+    @staticmethod
+    def write_skill_md(skill_dir: str, content: str):
+        md_path = os.path.join(skill_dir, "SKILL.md")
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+    @staticmethod
+    def read_handler(skill_dir: str) -> Optional[str]:
+        for c in ["main.py", "run.py"]:
+            p = os.path.join(skill_dir, "scripts", c)
+            if os.path.isfile(p):
+                with open(p, "r", encoding="utf-8") as f:
+                    return f.read()
+        return None
+
+    @staticmethod
+    def write_handler(skill_dir: str, code: str):
+        scripts_dir = os.path.join(skill_dir, "scripts")
+        os.makedirs(scripts_dir, exist_ok=True)
+        with open(os.path.join(scripts_dir, "main.py"), "w", encoding="utf-8") as f:
+            f.write(code)
 
 
 class BuiltinShellSkill(Skill):
@@ -279,10 +373,10 @@ BUILTIN_SKILLS = [
 ]
 
 
-def create_registry(skills_dir: str = "") -> SkillRegistry:
+def create_registry(skills_root: str = "") -> SkillRegistry:
     registry = SkillRegistry()
     for skill in BUILTIN_SKILLS:
         registry.register(skill)
-    if skills_dir:
-        registry.load_from_disk(skills_dir)
+    if skills_root:
+        registry.load_from_disk(skills_root)
     return registry

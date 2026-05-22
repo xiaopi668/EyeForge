@@ -855,8 +855,8 @@ class SettingsDialog(QDialog):
         self._skill_list.clear()
         if registry is None:
             from src.core.skills import create_registry
-            skills_dir = os.path.join(os.path.dirname(__file__), "..", "..", "skills")
-            registry = create_registry(skills_dir)
+            skills_root = os.path.join(os.path.dirname(__file__), "..", "..", "skills")
+            registry = create_registry(skills_root)
         enabled = set(self.config.get("skills_enabled", []))
         for s in registry.get_all_skills():
             origin = registry.get_origin(s.name)
@@ -874,35 +874,41 @@ class SettingsDialog(QDialog):
             self._skill_list.addItem(item)
 
     def _skill_code_template(self):
-        return """# 技能名称（唯一标识）
-SKILL_NAME = "my_skill"
-# 技能描述（AI 用来判断何时调用此技能）
-SKILL_DESCRIPTION = "我的自定义技能"
-# 参数列表（可选）
-SKILL_PARAMETERS = [
-    {"name": "arg", "type": "string", "required": True, "description": "参数说明"},
-]
+        return """---
+name: my_skill
+description: My custom skill
+parameters:
+  - name: arg1
+    type: string
+    required: true
+    description: Description of arg1
+---
 
-def run(arg: str = "") -> str:
-    # 在这里实现技能逻辑
-    return f"执行结果: {arg}"
+Instructions for the AI about when and how to use this skill.
 """
 
     def _add_skill_dialog(self):
         dialog = QDialog(self)
         dialog.setWindowTitle(self._tr("添加技能", "Add Skill"))
-        dialog.setMinimumSize(500, 400)
+        dialog.setMinimumSize(500, 450)
         dlg_layout = QVBoxLayout(dialog)
+
+        name_label = QLabel(self._tr("技能名称（目录名）:", "Skill name (directory name):"))
+        dlg_layout.addWidget(name_label)
+        name_input = QLineEdit()
+        name_input.setPlaceholderText("my_skill")
+        dlg_layout.addWidget(name_input)
+
         editor = QTextEdit()
         editor.setPlainText(self._skill_code_template())
         editor.setStyleSheet("font-family: monospace; font-size: 12px; background: #1e1e1e; color: #d4d4d4;")
-        dlg_layout.addWidget(QLabel(self._tr("编辑技能代码（修改后保存）：", "Edit skill code (modify then save):")))
+        dlg_layout.addWidget(QLabel(self._tr("SKILL.md 内容:", "SKILL.md content:")))
         dlg_layout.addWidget(editor)
 
         btn_row = QHBoxLayout()
         save_btn = QPushButton(self._tr("保存", "Save"))
         cancel_btn = QPushButton(self._tr("取消", "Cancel"))
-        save_btn.clicked.connect(lambda: self._do_save_skill(dialog, editor.toPlainText()))
+        save_btn.clicked.connect(lambda: self._do_save_skill(dialog, name_input.text().strip(), editor.toPlainText()))
         cancel_btn.clicked.connect(dialog.reject)
         btn_row.addStretch()
         btn_row.addWidget(save_btn)
@@ -910,22 +916,14 @@ def run(arg: str = "") -> str:
         dlg_layout.addLayout(btn_row)
         dialog.exec_()
 
-    def _do_save_skill(self, dialog, code):
-        from src.core.skills import SkillRegistry
-        skills_dir = os.path.join(os.path.dirname(__file__), "..", "..", "skills")
-        # Extract name from code
-        name = ""
-        for line in code.splitlines():
-            if line.strip().startswith('SKILL_NAME'):
-                try:
-                    name = line.split('=')[1].strip().strip('"').strip("'")
-                except Exception:
-                    pass
-                break
+    def _do_save_skill(self, dialog, name, md_content):
         if not name:
-            QMessageBox.warning(dialog, self._tr("错误", "Error"), self._tr("无法提取技能名称（SKILL_NAME）", "Cannot find SKILL_NAME"))
+            QMessageBox.warning(dialog, self._tr("错误", "Error"), self._tr("请输入技能名称", "Please enter a skill name"))
             return
-        SkillRegistry.save_user_skill(skills_dir, name, code)
+        from src.core.skills import SkillRegistry
+        skills_root = os.path.join(os.path.dirname(__file__), "..", "..", "skills")
+        skill_dir = SkillRegistry.create_skill_dir(skills_root, name)
+        SkillRegistry.write_skill_md(skill_dir, md_content)
         self._rebuild_skill_list()
         dialog.accept()
 
@@ -938,28 +936,47 @@ def run(arg: str = "") -> str:
             QMessageBox.information(self, self._tr("提示", "Info"), self._tr("内置技能不可编辑", "Built-in skills cannot be edited"))
             return
         from src.core.skills import SkillRegistry
-        code = SkillRegistry.get_skill_code(os.path.dirname(origin), os.path.basename(origin)[:-3])
-        if not code:
+        md_content = SkillRegistry.read_skill_md(origin)
+        if not md_content:
             return
         dialog = QDialog(self)
-        dialog.setWindowTitle(self._tr("编辑技能", "Edit Skill"))
-        dialog.setMinimumSize(500, 400)
+        dialog.setWindowTitle(self._tr("编辑技能 SKILL.md", "Edit Skill SKILL.md"))
+        dialog.setMinimumSize(500, 450)
         dlg_layout = QVBoxLayout(dialog)
         editor = QTextEdit()
-        editor.setPlainText(code)
+        editor.setPlainText(md_content)
         editor.setStyleSheet("font-family: monospace; font-size: 12px; background: #1e1e1e; color: #d4d4d4;")
+        dlg_layout.addWidget(QLabel(self._tr("SKILL.md 内容：", "SKILL.md content:")))
         dlg_layout.addWidget(editor)
+
+        handler_code = SkillRegistry.read_handler(origin)
+        handler_editor = None
+        if handler_code:
+            handler_editor = QTextEdit()
+            handler_editor.setPlainText(handler_code)
+            handler_editor.setStyleSheet("font-family: monospace; font-size: 12px; background: #1e1e1e; color: #d4d4d4;")
+            dlg_layout.addWidget(QLabel(self._tr("scripts/main.py：", "scripts/main.py:")))
+            dlg_layout.addWidget(handler_editor)
+
         btn_row = QHBoxLayout()
         save_btn = QPushButton(self._tr("保存", "Save"))
         cancel_btn = QPushButton(self._tr("取消", "Cancel"))
-        name = item.data(Qt.UserRole)
-        save_btn.clicked.connect(lambda: self._do_save_skill(dialog, editor.toPlainText()))
+        save_btn.clicked.connect(lambda: self._do_edit_skill(dialog, origin, editor.toPlainText(),
+                                                              handler_editor.toPlainText() if handler_editor else None))
         cancel_btn.clicked.connect(dialog.reject)
         btn_row.addStretch()
         btn_row.addWidget(save_btn)
         btn_row.addWidget(cancel_btn)
         dlg_layout.addLayout(btn_row)
         dialog.exec_()
+
+    def _do_edit_skill(self, dialog, skill_dir, md_content, handler_code):
+        from src.core.skills import SkillRegistry
+        SkillRegistry.write_skill_md(skill_dir, md_content)
+        if handler_code is not None:
+            SkillRegistry.write_handler(skill_dir, handler_code)
+        self._rebuild_skill_list()
+        dialog.accept()
 
     def _delete_skill(self):
         item = self._skill_list.currentItem()
@@ -971,10 +988,10 @@ def run(arg: str = "") -> str:
             return
         name = item.data(Qt.UserRole)
         mb = QMessageBox.question(self, self._tr("确认删除", "Confirm Delete"),
-                                  self._tr(f"确定删除技能 '{name}'？", f"Delete skill '{name}'?"))
+                                  self._tr(f"确定删除技能 '{name}'？\n{origin}", f"Delete skill '{name}'?\n{origin}"))
         if mb == QMessageBox.Yes:
             from src.core.skills import SkillRegistry
-            SkillRegistry.delete_user_skill(os.path.dirname(origin), name)
+            SkillRegistry.delete_skill_dir(origin)
             self._rebuild_skill_list()
 
     def _save(self):
