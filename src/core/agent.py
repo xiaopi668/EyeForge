@@ -41,7 +41,7 @@ class EyeForgeAgent:
     def __init__(self, config: dict, callback: StepCallback = None):
         self.config = config
         self.callback = callback or StepCallback()
-        skills_dir = os.path.join(os.path.dirname(__file__), "..", "..", "skills")
+        skills_dir = os.path.join(os.path.dirname(__file__), "..", "skills")
         self.skills = create_registry(skills_dir)
         enabled = set(config.get("skills_enabled", []))
         if enabled:

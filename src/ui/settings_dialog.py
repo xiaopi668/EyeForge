@@ -29,9 +29,14 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("设置 - Settings")
         self.setMinimumWidth(480)
         self.setMinimumHeight(400)
-        self.move(-10000, -10000)
         self._init_ui()
-        QTimer.singleShot(0, self._center_on_parent)
+        self._centered = False
+
+    def showEvent(self, event):
+        if not self._centered:
+            self._centered = True
+            self._center_on_parent()
+        super().showEvent(event)
 
     def _center_on_parent(self):
         if self.parent() and self.parent().isVisible():
@@ -855,7 +860,7 @@ class SettingsDialog(QDialog):
         self._skill_list.clear()
         if registry is None:
             from src.core.skills import create_registry
-            skills_root = os.path.join(os.path.dirname(__file__), "..", "..", "skills")
+            skills_root = os.path.join(os.path.dirname(__file__), "..", "skills")
             registry = create_registry(skills_root)
         enabled = set(self.config.get("skills_enabled", []))
         for s in registry.get_all_skills():
