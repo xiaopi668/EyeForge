@@ -8,7 +8,8 @@ from PyQt5.QtWidgets import (
     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox,
     QPushButton, QLabel, QTabWidget, QWidget, QMessageBox,
-    QListWidget, QStackedWidget, QGroupBox, QFrame
+    QListWidget, QStackedWidget, QGroupBox, QFrame,
+    QCheckBox, QTextEdit, QListWidgetItem,
 )
 from PyQt5.QtCore import Qt, QTimer
 from src.utils.multimodal import is_multimodal
@@ -86,6 +87,9 @@ class SettingsDialog(QDialog):
 
         self._update_tab = self._update_tab()
         tabs.addTab(self._update_tab, self._tr("更新", "Update"))
+
+        self._skills_tab = self._skills_tab()
+        tabs.addTab(self._skills_tab, self._tr("技能", "Skills"))
 
         layout.addWidget(tabs)
 
@@ -761,62 +765,162 @@ class SettingsDialog(QDialog):
         return page
 
     def _update_tab(self):
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        from PyQt5.QtGui import QDesktopServices
-        from PyQt5.QtCore import QUrl
-
-        layout.addWidget(QLabel(
-            f'<b>{"Current Version" if self.lang == "en" else "当前版本"}:</b> v{VERSION}'))
-        layout.addWidget(QLabel(" "))
-
-        self._update_status = QLabel("")
-        layout.addWidget(self._update_status)
-
-        self._update_btn = QPushButton(
-            self._tr("🔄 检查更新", "🔄 Check Update"))
-        self._update_btn.setStyleSheet(
-            "QPushButton { background-color: #6c5ce7; color: white; font-weight: bold; padding: 6px 16px; }"
-            "QPushButton:hover { background-color: #5a4bd1; }")
-        self._update_btn.clicked.connect(self._do_check_update)
-        layout.addWidget(self._update_btn)
-
-        self._update_links = QHBoxLayout()
-        self._gh_btn = QPushButton("📦 GitHub Releases")
-        self._gh_btn.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl("https://github.com/xiaopi668/EyeForge/releases")))
-        self._gc_btn = QPushButton("📦 GitCode Releases")
-        self._gc_btn.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl("https://gitcode.com/xiaopi668/EyeForge/releases")))
-        self._update_links.addWidget(self._gh_btn)
-        self._update_links.addWidget(self._gc_btn)
-        layout.addLayout(self._update_links)
-
-        layout.addStretch()
+        ...
         return widget
 
-    def _do_check_update(self):
-        self._update_btn.setEnabled(False)
-        self._update_btn.setText(self._tr("检查中...", "Checking..."))
-        self._update_status.setText("⏳ " + (self._tr("正在检查...", "Checking...")))
-        QApplication.processEvents()
+    def _skills_tab(self):
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
 
-        result = check_update()
+        self._skill_list = QListWidget()
+        self._rebuild_skill_list()
+        layout.addWidget(self._skill_list)
 
-        if result["latest"] != "Unknown":
-            info = (f'<b>{"Latest" if self.lang == "en" else "最新版本"}:</b> v{result["latest"]}<br>'
-                    f'<b>{"Source" if self.lang == "en" else "来源"}:</b> {result["source"] or "GitHub"}')
-            if result["update_available"]:
-                info += f'<br><b style="color:#00d4aa;">✶ {"New version available!" if self.lang == "en" else "有新版本可用！"}</b>'
-            else:
-                info += f'<br>✓ {"Up to date" if self.lang == "en" else "已是最新版本"}'
-            self._update_status.setText(info)
-        else:
-            self._update_status.setText(
-                self._tr("✗ 检查更新失败 (网络或服务异常)", "✗ Update check failed (network or service error)"))
+        btn_row = QHBoxLayout()
+        add_btn = QPushButton(self._tr("添加技能", "Add Skill"))
+        add_btn.setStyleSheet("QPushButton { background-color: #00d4aa; color: #111; font-weight: bold; padding: 4px 12px; border-radius: 4px; }")
+        add_btn.clicked.connect(self._add_skill_dialog)
+        btn_row.addWidget(add_btn)
 
-        self._update_btn.setEnabled(True)
-        self._update_btn.setText(self._tr("🔄 检查更新", "🔄 Check Update"))
+        edit_btn = QPushButton(self._tr("编辑", "Edit"))
+        edit_btn.setStyleSheet("QPushButton { background-color: #6c5ce7; color: white; padding: 4px 12px; border-radius: 4px; }")
+        edit_btn.clicked.connect(self._edit_skill_dialog)
+        btn_row.addWidget(edit_btn)
+
+        delete_btn = QPushButton(self._tr("删除", "Delete"))
+        delete_btn.setStyleSheet("QPushButton { background-color: #e17055; color: white; padding: 4px 12px; border-radius: 4px; }")
+        delete_btn.clicked.connect(self._delete_skill)
+        btn_row.addWidget(delete_btn)
+
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+        return widget
+
+    def _rebuild_skill_list(self, registry=None):
+        self._skill_list.clear()
+        if registry is None:
+            from src.core.skills import create_registry
+            skills_dir = os.path.join(os.path.dirname(__file__), "..", "..", "skills")
+            registry = create_registry(skills_dir)
+        enabled = set(self.config.get("skills_enabled", []))
+        for s in registry.get_all_skills():
+            origin = registry.get_origin(s.name)
+            is_enabled = s.name in enabled if enabled else True
+            item = QListWidgetItem()
+            label = f"[{'✓' if is_enabled else '✗'}] {s.name}  —  {s.description}"
+            if origin != "builtin":
+                label += f"  ({os.path.basename(origin)})"
+            item.setText(label)
+            item.setData(Qt.UserRole, s.name)
+            item.setData(Qt.UserRole + 1, is_enabled)
+            item.setData(Qt.UserRole + 2, origin)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked if is_enabled else Qt.Unchecked)
+            self._skill_list.addItem(item)
+
+    def _skill_code_template(self):
+        return """# 技能名称（唯一标识）
+SKILL_NAME = "my_skill"
+# 技能描述（AI 用来判断何时调用此技能）
+SKILL_DESCRIPTION = "我的自定义技能"
+# 参数列表（可选）
+SKILL_PARAMETERS = [
+    {"name": "arg", "type": "string", "required": True, "description": "参数说明"},
+]
+
+def run(arg: str = "") -> str:
+    # 在这里实现技能逻辑
+    return f"执行结果: {arg}"
+"""
+
+    def _add_skill_dialog(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle(self._tr("添加技能", "Add Skill"))
+        dialog.setMinimumSize(500, 400)
+        dlg_layout = QVBoxLayout(dialog)
+        editor = QTextEdit()
+        editor.setPlainText(self._skill_code_template())
+        editor.setStyleSheet("font-family: monospace; font-size: 12px; background: #1e1e1e; color: #d4d4d4;")
+        dlg_layout.addWidget(QLabel(self._tr("编辑技能代码（修改后保存）：", "Edit skill code (modify then save):")))
+        dlg_layout.addWidget(editor)
+
+        btn_row = QHBoxLayout()
+        save_btn = QPushButton(self._tr("保存", "Save"))
+        cancel_btn = QPushButton(self._tr("取消", "Cancel"))
+        save_btn.clicked.connect(lambda: self._do_save_skill(dialog, editor.toPlainText()))
+        cancel_btn.clicked.connect(dialog.reject)
+        btn_row.addStretch()
+        btn_row.addWidget(save_btn)
+        btn_row.addWidget(cancel_btn)
+        dlg_layout.addLayout(btn_row)
+        dialog.exec_()
+
+    def _do_save_skill(self, dialog, code):
+        from src.core.skills import SkillRegistry
+        skills_dir = os.path.join(os.path.dirname(__file__), "..", "..", "skills")
+        # Extract name from code
+        name = ""
+        for line in code.splitlines():
+            if line.strip().startswith('SKILL_NAME'):
+                try:
+                    name = line.split('=')[1].strip().strip('"').strip("'")
+                except Exception:
+                    pass
+                break
+        if not name:
+            QMessageBox.warning(dialog, self._tr("错误", "Error"), self._tr("无法提取技能名称（SKILL_NAME）", "Cannot find SKILL_NAME"))
+            return
+        SkillRegistry.save_user_skill(skills_dir, name, code)
+        self._rebuild_skill_list()
+        dialog.accept()
+
+    def _edit_skill_dialog(self):
+        item = self._skill_list.currentItem()
+        if not item:
+            return
+        origin = item.data(Qt.UserRole + 2)
+        if origin == "builtin":
+            QMessageBox.information(self, self._tr("提示", "Info"), self._tr("内置技能不可编辑", "Built-in skills cannot be edited"))
+            return
+        from src.core.skills import SkillRegistry
+        code = SkillRegistry.get_skill_code(os.path.dirname(origin), os.path.basename(origin)[:-3])
+        if not code:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle(self._tr("编辑技能", "Edit Skill"))
+        dialog.setMinimumSize(500, 400)
+        dlg_layout = QVBoxLayout(dialog)
+        editor = QTextEdit()
+        editor.setPlainText(code)
+        editor.setStyleSheet("font-family: monospace; font-size: 12px; background: #1e1e1e; color: #d4d4d4;")
+        dlg_layout.addWidget(editor)
+        btn_row = QHBoxLayout()
+        save_btn = QPushButton(self._tr("保存", "Save"))
+        cancel_btn = QPushButton(self._tr("取消", "Cancel"))
+        name = item.data(Qt.UserRole)
+        save_btn.clicked.connect(lambda: self._do_save_skill(dialog, editor.toPlainText()))
+        cancel_btn.clicked.connect(dialog.reject)
+        btn_row.addStretch()
+        btn_row.addWidget(save_btn)
+        btn_row.addWidget(cancel_btn)
+        dlg_layout.addLayout(btn_row)
+        dialog.exec_()
+
+    def _delete_skill(self):
+        item = self._skill_list.currentItem()
+        if not item:
+            return
+        origin = item.data(Qt.UserRole + 2)
+        if origin == "builtin":
+            QMessageBox.information(self, self._tr("提示", "Info"), self._tr("内置技能不可删除", "Built-in skills cannot be deleted"))
+            return
+        name = item.data(Qt.UserRole)
+        mb = QMessageBox.question(self, self._tr("确认删除", "Confirm Delete"),
+                                  self._tr(f"确定删除技能 '{name}'？", f"Delete skill '{name}'?"))
+        if mb == QMessageBox.Yes:
+            from src.core.skills import SkillRegistry
+            SkillRegistry.delete_user_skill(os.path.dirname(origin), name)
+            self._rebuild_skill_list()
 
     def _save(self):
         self._ensure_channel_pages()
@@ -886,6 +990,13 @@ class SettingsDialog(QDialog):
         self.config["qq_ws_port"] = self._qq_ws_port.value()
         self.config["qq_bot_token"] = self._qq_bot_token.text().strip()
         self.config["qq_bot_appid"] = self._qq_bot_appid.text().strip()
+
+        skills_enabled = []
+        for i in range(self._skill_list.count()):
+            item = self._skill_list.item(i)
+            if item.checkState() == Qt.Checked:
+                skills_enabled.append(item.data(Qt.UserRole))
+        self.config["skills_enabled"] = skills_enabled
 
         try:
             with open("config.json", "w", encoding="utf-8") as f:

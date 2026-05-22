@@ -1,4 +1,5 @@
 import json
+import os
 import time
 import logging
 from typing import Optional
@@ -40,7 +41,12 @@ class EyeForgeAgent:
     def __init__(self, config: dict, callback: StepCallback = None):
         self.config = config
         self.callback = callback or StepCallback()
-        self.skills = create_registry()
+        skills_dir = os.path.join(os.path.dirname(__file__), "..", "..", "skills")
+        self.skills = create_registry(skills_dir)
+        enabled = set(config.get("skills_enabled", []))
+        if enabled:
+            for s in self.skills.get_all_skills():
+                self.skills.set_enabled(s.name, s.name in enabled)
         self.screen = ScreenCapture()
         self.vision = VisionProcessor(
             quality=config.get("screenshot_quality", 70),
