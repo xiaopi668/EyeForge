@@ -707,18 +707,31 @@ class SettingsDialog(QDialog):
         )
         form.addRow(self._tr("接入方式:", "Mode:"), self._qq_mode)
 
+        self._qq_ws_group = QGroupBox(self._tr("go-cqhttp WebSocket 设置", "go-cqhttp WebSocket Settings"))
+        ws_form = QFormLayout(self._qq_ws_group)
         self._qq_ws_host = QLineEdit(self.config.get("qq_ws_host", "127.0.0.1"))
-        form.addRow(self._tr("WebSocket 地址:", "WS Host:"), self._qq_ws_host)
+        ws_form.addRow(self._tr("地址:", "Host:"), self._qq_ws_host)
         self._qq_ws_port = QSpinBox()
         self._qq_ws_port.setRange(1024, 65535)
         self._qq_ws_port.setValue(self.config.get("qq_ws_port", 6700))
-        form.addRow(self._tr("WebSocket 端口:", "WS Port:"), self._qq_ws_port)
+        ws_form.addRow(self._tr("端口:", "Port:"), self._qq_ws_port)
+        form.addRow(self._qq_ws_group)
 
+        self._qq_official_group = QGroupBox(self._tr("QQ 官方机器人设置", "QQ Official Bot Settings"))
+        off_form = QFormLayout(self._qq_official_group)
+        self._qq_bot_appid = QLineEdit(self.config.get("qq_bot_appid", ""))
+        off_form.addRow(self._tr("Bot AppID:", "Bot AppID:"), self._qq_bot_appid)
         self._qq_bot_token = QLineEdit(self.config.get("qq_bot_token", ""))
         self._qq_bot_token.setEchoMode(QLineEdit.Password)
-        form.addRow(self._tr("Bot Token:", "Bot Token:"), self._qq_bot_token)
-        self._qq_bot_appid = QLineEdit(self.config.get("qq_bot_appid", ""))
-        form.addRow(self._tr("Bot AppID:", "Bot AppID:"), self._qq_bot_appid)
+        off_form.addRow(self._tr("Bot Token:", "Bot Token:"), self._qq_bot_token)
+        form.addRow(self._qq_official_group)
+
+        def _toggle_qq_mode(idx):
+            is_ws = idx == 0
+            self._qq_ws_group.setVisible(is_ws)
+            self._qq_official_group.setVisible(not is_ws)
+        self._qq_mode.currentIndexChanged.connect(_toggle_qq_mode)
+        _toggle_qq_mode(self._qq_mode.currentIndex())
 
         tip = QLabel(self._tr(
             "go-cqhttp 方式使用 WebSocket 反向连接本服务。\n"
