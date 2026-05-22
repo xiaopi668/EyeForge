@@ -1,5 +1,9 @@
 import json
 import logging
+import io
+import threading
+from urllib.request import urlopen
+from urllib.parse import quote
 from PyQt5.QtWidgets import (
     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox,
@@ -23,12 +27,15 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("设置 - Settings")
         self.setMinimumWidth(480)
         self.setMinimumHeight(400)
+        self._shown = False
         self._init_ui()
 
     def showEvent(self, event):
+        if not self._shown:
+            self._shown = True
+            self.setWindowOpacity(0)
+            QTimer.singleShot(80, lambda: self.setWindowOpacity(1))
         super().showEvent(event)
-        self.setWindowOpacity(0)
-        QTimer.singleShot(60, lambda: self.setWindowOpacity(1))
 
     def _tr(self, zh: str, en: str) -> str:
         return en if self.lang == "en" else zh
@@ -545,12 +552,19 @@ class SettingsDialog(QDialog):
             self._wc_status.setText(self._tr("状态: 运行中", "Status: Running"))
         return page
 
+    def _ensure_channel_pages(self):
+        makers = [self._make_ws_page, self._make_wc_page, self._make_wcom_page,
+                  self._make_dingtalk_page, self._make_qq_page]
+        for idx, maker in enumerate(makers):
+            if self._channel_pages.get(idx) is None:
+                page = maker()
+                self._channel_pages[idx] = page
+                self._channel_stack.addWidget(page)
+
     def _wc_qr_login(self):
         from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel
-        from PyQt5.QtCore import Qt, QTimer
+        from PyQt5.QtCore import Qt
         from PyQt5.QtGui import QPixmap
-        from urllib.request import urlopen
-        import io, threading
 
         dialog = QDialog(self)
         dialog.setWindowTitle(self._tr("微信扫码登录", "WeChat QR Login"))
@@ -574,9 +588,10 @@ class SettingsDialog(QDialog):
 
         def progress(msg: str):
             if msg.startswith("qrcode_ready:"):
-                url = msg[len("qrcode_ready:"):]
+                data_url = msg[len("qrcode_ready:"):]
                 try:
-                    img_data = urlopen(url, timeout=10).read()
+                    qr_api = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={quote(data_url)}"
+                    img_data = urlopen(qr_api, timeout=10).read()
                     pixmap = QPixmap()
                     pixmap.loadFromData(img_data)
                     self._qr_image.setPixmap(pixmap.scaled(
@@ -775,6 +790,7 @@ class SettingsDialog(QDialog):
         self._update_btn.setText(self._tr("🔄 检查更新", "🔄 Check Update"))
 
     def _save(self):
+        self._ensure_channel_pages()
         prov = self._provider_combo.currentData()
         model_key = {"openai": "openai_model", "anthropic": "anthropic_model",
                      "ollama": "ollama_model", "gemini": "gemini_model", "custom": "custom_model"}
