@@ -34,7 +34,7 @@ class AgentWorker(QThread):
     step_signal = pyqtSignal(dict)
     error_signal = pyqtSignal(str)
     complete_signal = pyqtSignal()
-    screenshot_signal = pyqtSignal(str)
+    screenshot_signal = pyqtSignal(bytes)
     status_signal = pyqtSignal(str)
 
     def __init__(self, agent: EyeForgeAgent, task: str, is_continuation: bool = False):
@@ -53,7 +53,8 @@ class AgentWorker(QThread):
             def on_complete(self):
                 self.worker.complete_signal.emit()
             def on_screenshot(self, b64):
-                self.worker.screenshot_signal.emit(b64)
+                import base64
+                self.worker.screenshot_signal.emit(base64.b64decode(b64))
             def on_status(self, msg):
                 self.worker.status_signal.emit(msg)
 
@@ -664,18 +665,17 @@ class MainWindow(QMainWindow):
         self._log(message, "info")
         self.status_label.setText(message)
 
-    def _on_screenshot(self, image_b64: str):
+    def _on_screenshot(self, image_data: bytes):
         from PyQt5.QtGui import QPixmap
-        from PyQt5.QtCore import QByteArray, QBuffer
-        import base64
-        img_data = base64.b64decode(image_b64)
         pixmap = QPixmap()
-        pixmap.loadFromData(img_data, "JPEG")
+        pixmap.loadFromData(image_data, "JPEG")
+
+        self.preview.update_preview(pixmap)
 
         debug_path = "logs/last_screenshot.jpg"
         try:
             with open(debug_path, "wb") as f:
-                f.write(img_data)
+                f.write(image_data)
         except Exception:
             pass
 
@@ -685,8 +685,6 @@ class MainWindow(QMainWindow):
         size_label = "Screenshot size" if lang == "en" else "截图尺寸"
         quality_label = "quality" if lang == "en" else "质量"
         self._log(f"{size_label}: {w}x{h}, {quality_label}: {self.config.get('screenshot_quality', 95)}", "info")
-
-        self.preview.update_preview(pixmap)
 
     def _on_worker_finished(self):
         self._reset_controls()

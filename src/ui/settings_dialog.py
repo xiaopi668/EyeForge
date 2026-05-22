@@ -565,8 +565,16 @@ class SettingsDialog(QDialog):
 
     def _wc_qr_login(self):
         from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel
-        from PyQt5.QtCore import Qt
+        from PyQt5.QtCore import Qt, pyqtSignal, QObject
         from PyQt5.QtGui import QPixmap
+
+        class _QRSignals(QObject):
+            set_image = pyqtSignal(str)
+            set_status = pyqtSignal(str)
+            set_token = pyqtSignal(str)
+            done = pyqtSignal()
+
+        sigs = _QRSignals()
 
         dialog = QDialog(self)
         dialog.setWindowTitle(self._tr("微信扫码登录", "WeChat QR Login"))
@@ -586,38 +594,44 @@ class SettingsDialog(QDialog):
         close_btn.clicked.connect(dialog.reject)
         dl.addWidget(close_btn)
 
-        dialog.show()
+        sigs.set_image.connect(lambda data_url: self._qr_load_qr(data_url))
+        sigs.set_status.connect(self._qr_status.setText)
+        sigs.set_token.connect(lambda t: self._wc_token.setText(t))
+        sigs.done.connect(dialog.accept)
 
         def progress(msg: str):
             if msg.startswith("qrcode_ready:"):
-                data_url = msg[len("qrcode_ready:"):]
-                try:
-                    qr_api = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={quote(data_url)}"
-                    img_data = urlopen(qr_api, timeout=10).read()
-                    pixmap = QPixmap()
-                    pixmap.loadFromData(img_data)
-                    self._qr_image.setPixmap(pixmap.scaled(
-                        280, 280, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-                    self._qr_status.setText(self._tr("请用微信扫描二维码", "Scan QR code with WeChat"))
-                except Exception as e:
-                    self._qr_status.setText(self._tr(f"加载二维码失败: {e}", f"Failed to load QR: {e}"))
+                sigs.set_image.emit(msg[len("qrcode_ready:"):])
             else:
-                self._qr_status.setText(msg)
+                sigs.set_status.emit(msg)
 
         def login_thread():
             from src.channels import wechat as wc_mod
             try:
                 result = wc_mod.qr_login(progress_callback=progress)
                 token = result["token"]
-                self._wc_token.setText(token)
-                self._qr_status.setText(self._tr("✓ 登录成功！Token 已填入", "✓ Login success! Token filled"))
-                QTimer.singleShot(1000, dialog.accept)
+                sigs.set_token.emit(token)
+                sigs.set_status.emit(self._tr("✓ 登录成功！Token 已填入", "✓ Login success! Token filled"))
+                QTimer.singleShot(1000, sigs.done.emit)
             except Exception as e:
-                self._qr_status.setText(self._tr(f"登录失败: {e}", f"Login failed: {e}"))
+                sigs.set_status.emit(self._tr(f"登录失败: {e}", f"Login failed: {e}"))
 
         t = threading.Thread(target=login_thread, daemon=True)
         t.start()
         dialog.exec_()
+
+    def _qr_load_qr(self, data_url: str):
+        from PyQt5.QtGui import QPixmap
+        try:
+            qr_api = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={quote(data_url)}"
+            img_data = urlopen(qr_api, timeout=10).read()
+            pixmap = QPixmap()
+            pixmap.loadFromData(img_data)
+            self._qr_image.setPixmap(pixmap.scaled(
+                280, 280, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self._qr_status.setText(self._tr("请用微信扫描二维码", "Scan QR code with WeChat"))
+        except Exception as e:
+            self._qr_status.setText(self._tr(f"加载二维码失败: {e}", f"Failed to load QR: {e}"))
 
     def _make_wcom_page(self):
         page = QWidget()
