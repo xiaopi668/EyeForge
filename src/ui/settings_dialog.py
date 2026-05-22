@@ -832,7 +832,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(self._skill_list)
 
         btn_row = QHBoxLayout()
-        add_btn = QPushButton(self._tr("添加技能", "Add Skill"))
+        add_btn = QPushButton(self._tr("导入 ZIP", "Import ZIP"))
         add_btn.setStyleSheet("QPushButton { background-color: #00d4aa; color: #111; font-weight: bold; padding: 4px 12px; border-radius: 4px; }")
         add_btn.clicked.connect(self._add_skill_dialog)
         btn_row.addWidget(add_btn)
@@ -873,55 +873,24 @@ class SettingsDialog(QDialog):
             item.setCheckState(Qt.Checked if is_enabled else Qt.Unchecked)
             self._skill_list.addItem(item)
 
-    def _skill_code_template(self):
-        return """---
-name: my_skill
-description: My custom skill
-parameters: []
----
-
-Instructions for the AI about when and how to use this skill.
-"""
-
     def _add_skill_dialog(self):
-        dialog = QDialog(self)
-        dialog.setWindowTitle(self._tr("添加技能", "Add Skill"))
-        dialog.setMinimumSize(500, 450)
-        dlg_layout = QVBoxLayout(dialog)
-
-        name_label = QLabel(self._tr("技能名称（目录名）:", "Skill name (directory name):"))
-        dlg_layout.addWidget(name_label)
-        name_input = QLineEdit()
-        name_input.setPlaceholderText("my_skill")
-        dlg_layout.addWidget(name_input)
-
-        editor = QTextEdit()
-        editor.setPlainText(self._skill_code_template())
-        editor.setStyleSheet("font-family: monospace; font-size: 12px; background: #1e1e1e; color: #d4d4d4;")
-        dlg_layout.addWidget(QLabel(self._tr("SKILL.md 内容:", "SKILL.md content:")))
-        dlg_layout.addWidget(editor)
-
-        btn_row = QHBoxLayout()
-        save_btn = QPushButton(self._tr("保存", "Save"))
-        cancel_btn = QPushButton(self._tr("取消", "Cancel"))
-        save_btn.clicked.connect(lambda: self._do_save_skill(dialog, name_input.text().strip(), editor.toPlainText()))
-        cancel_btn.clicked.connect(dialog.reject)
-        btn_row.addStretch()
-        btn_row.addWidget(save_btn)
-        btn_row.addWidget(cancel_btn)
-        dlg_layout.addLayout(btn_row)
-        dialog.exec_()
-
-    def _do_save_skill(self, dialog, name, md_content):
-        if not name:
-            QMessageBox.warning(dialog, self._tr("错误", "Error"), self._tr("请输入技能名称", "Please enter a skill name"))
+        from PyQt5.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(
+            self, self._tr("选择技能 ZIP 文件", "Select Skill ZIP File"),
+            "", "ZIP Files (*.zip);;All Files (*)"
+        )
+        if not path:
             return
         from src.core.skills import SkillRegistry
         skills_root = os.path.join(os.path.dirname(__file__), "..", "..", "skills")
-        SkillRegistry.create_skill_dir(skills_root, name)
-        SkillRegistry.write_file(os.path.join(skills_root, name, "SKILL.md"), md_content)
+        name, error = SkillRegistry.import_zip(path, skills_root)
+        if error:
+            QMessageBox.warning(self, self._tr("错误", "Error"), error)
+            return
         self._rebuild_skill_list()
-        dialog.accept()
+        lang = self.config.get("language", "zh")
+        QMessageBox.information(self, self._tr("成功", "Success"),
+            f"技能 '{name}' {('imported' if lang == 'en' else '已导入')}")
 
     def _edit_skill_dialog(self):
         item = self._skill_list.currentItem()

@@ -321,6 +321,37 @@ Instructions for the AI about when and how to use this skill.
                 result.append(rel)
         return sorted(result)
 
+    @staticmethod
+    def import_zip(zip_path: str, skills_root: str) -> tuple:
+        """Import a skill from a ZIP file. Returns (name, error_or_None)."""
+        import zipfile
+        if not os.path.isfile(zip_path):
+            return "", f"文件不存在: {zip_path}"
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                members = zf.namelist()
+                top_dirs = set()
+                for m in members:
+                    parts = m.replace("\\", "/").split("/")
+                    if parts[0]:
+                        top_dirs.add(parts[0])
+                if len(top_dirs) != 1:
+                    return "", "ZIP 应包含单个顶级技能目录"
+                skill_name = list(top_dirs)[0]
+                target = os.path.join(skills_root, skill_name)
+                if os.path.exists(target):
+                    return "", f"技能 '{skill_name}' 已存在"
+                zf.extractall(skills_root)
+                if not os.path.isfile(os.path.join(target, "SKILL.md")):
+                    import shutil
+                    shutil.rmtree(target)
+                    return "", f"技能目录中缺少 SKILL.md"
+                return skill_name, None
+        except zipfile.BadZipFile:
+            return "", "无效的 ZIP 文件"
+        except Exception as e:
+            return "", f"导入失败: {e}"
+
 
 class BuiltinShellSkill(BuiltinSkill):
     name = "run_shell"
