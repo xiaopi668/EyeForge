@@ -82,7 +82,16 @@ class MainWindow(QMainWindow):
             self.setWindowIcon(QIcon(icon_path))
 
         self._init_ui()
-        self._init_tray()
+        self._update_preview_placeholder()
+
+    def _update_preview_placeholder(self):
+        lang = self.config.get("language", "zh")
+        if self.vision_check.isChecked():
+            self.preview.set_placeholder("Waiting for screenshot..." if lang == "en" else "等待截图...")
+        else:
+            self.preview.set_placeholder("Screen recognition disabled" if lang == "en" else "屏幕识别已关闭")
+
+    def _init_tray(self):
         self._init_hotkeys()
         self._update_size()
 
@@ -170,6 +179,7 @@ class MainWindow(QMainWindow):
         self.vision_check.setChecked(True)
         self.vision_check.setToolTip("开启后 AI 可截图分析屏幕画面；关闭后仅使用命令模式" if lang == "zh" else
                                      "When enabled, AI can capture and analyze screen; when disabled, command-only mode")
+        self.vision_check.toggled.connect(self._update_preview_placeholder)
         self.settings_btn = QPushButton("⚙ 设置")
         self.settings_btn.setStyleSheet("padding: 8px 16px; border: 1px solid #666; border-radius: 4px;")
 
@@ -298,7 +308,6 @@ class MainWindow(QMainWindow):
             self.settings_btn.setText("⚙ Settings")
             self.log_label.setText("Execution Log")
             self.status_label.setText("Ready")
-            self.preview.set_placeholder("Waiting for screenshot...")
         else:
             self.setWindowTitle(f"EyeForge v{VERSION} - AI 屏幕操控助手")
             self.header_label.setText(f"🧿 EyeForge v{VERSION} — AI 屏幕操控助手")
@@ -309,9 +318,9 @@ class MainWindow(QMainWindow):
             self.settings_btn.setText("⚙ 设置")
             self.log_label.setText("执行日志")
             self.status_label.setText("就绪")
-            self.preview.set_placeholder("等待截图...")
         if hasattr(self, "tray"):
             self._update_tray_menu()
+        self._update_preview_placeholder()
 
     def _init_tray(self):
         if not QSystemTrayIcon.isSystemTrayAvailable():
