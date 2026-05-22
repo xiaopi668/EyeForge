@@ -37,11 +37,10 @@ class AgentWorker(QThread):
     screenshot_signal = pyqtSignal(bytes)
     status_signal = pyqtSignal(str)
 
-    def __init__(self, agent: EyeForgeAgent, task: str, is_continuation: bool = False):
+    def __init__(self, agent: EyeForgeAgent, task: str):
         super().__init__()
         self.agent = agent
         self.task = task
-        self.is_continuation = is_continuation
 
         class _Callback(StepCallback):
             def __init__(self, worker):
@@ -61,10 +60,7 @@ class AgentWorker(QThread):
         self.agent.callback = _Callback(self)
 
     def run(self):
-        if self.is_continuation:
-            self.agent.continue_with(self.task)
-        else:
-            self.agent.run(self.task)
+        self.agent.run(self.task)
 
 
 class MainWindow(QMainWindow):
@@ -546,10 +542,7 @@ class MainWindow(QMainWindow):
         use_vision = self.vision_check.isChecked()
         self.config["use_vision"] = use_vision
 
-        if self.agent is None or not self.agent._has_session:
-            self.agent = EyeForgeAgent(self.config)
-        else:
-            self.agent.config = self.config
+        self.agent = EyeForgeAgent(self.config)
 
         if not self.agent.llm.is_available():
             title = "Notice" if lang == "en" else "提示"
@@ -597,7 +590,7 @@ class MainWindow(QMainWindow):
         log_prefix = "Task" if lang == "en" else "任务"
         self._log(f"{log_prefix}: {task}", "info")
 
-        self.worker = AgentWorker(self.agent, task, is_continuation=self.agent._has_session)
+        self.worker = AgentWorker(self.agent, task)
         self.worker.step_signal.connect(self._on_step)
         self.worker.error_signal.connect(self._on_error)
         self.worker.complete_signal.connect(self._on_complete)
