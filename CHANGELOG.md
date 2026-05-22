@@ -3,7 +3,7 @@
 | 日期 | 类型 | 内容 |
 |------|------|------|
 | 2026-05-22 | 发布 | **v1.5.0-beta.1** — OpenClaw 技能系统 + 浮窗聊天 UI + 大量稳定性修复 |
-| 2026-05-22 | 新增 | **兼容 OpenClaw / Claude Code Skills** — 支持 SKILL.md + reference.md + examples/ + scripts/ 目录结构，ZIP 导入技能，可直接使用 OpenClaw 生态及 Claude Code skills 技能包，内置 6 个默认技能 |
+| 2026-05-22 | 新增 | **兼容 OpenClaw / Claude Code Skills** — ZIP 导入技能，可直接使用 OpenClaw 生态及 Claude Code skills 技能包，内置 6 个默认技能 |
 | 2026-05-22 | 新增 | **设置 → 技能管理** — 技能列表（勾选启用/禁用）、导入 ZIP、编辑目录内任意文件、删除技能 |
 | 2026-05-22 | 新增 | **技能注入 AI 上下文** — SKILL.md 指令、reference.md 参考文档、examples 示例全部注入系统提示词，AI 通过 `{"type":"skill","name":"...","script":"..."}` 调用 |
 | 2026-05-22 | 新增 | **浮窗聊天 UI** — 消息气泡、用户绿色右对齐/AI 灰色左对齐、可折叠 Shell 执行项 |

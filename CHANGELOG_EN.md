@@ -3,7 +3,7 @@
 | Date | Type | Description |
 |------|------|-------------|
 | 2026-05-22 | Release | **v1.5.0-beta.1** — OpenClaw-compatible skills system + float window chat UI + major stability fixes |
-| 2026-05-22 | Added | **OpenClaw / Claude Code Skills compatible** — SKILL.md + reference.md + examples/ + scripts/ directory structure, ZIP import, directly use skills from OpenClaw ecosystem and Claude Code, 6 built-in skills |
+| 2026-05-22 | Added | **OpenClaw / Claude Code Skills compatible** — ZIP import, directly use skills from OpenClaw ecosystem and Claude Code, 6 built-in skills |
 | 2026-05-22 | Added | **Settings → Skills** — skill list with enable/disable toggle, ZIP import, edit any file in skill directory, delete |
 | 2026-05-22 | Added | **Skill injection into AI context** — SKILL.md instructions, reference.md docs, examples all injected into system prompt; AI calls via `{"type":"skill","name":"...","script":"..."}` |
 | 2026-05-22 | Added | **Float window chat UI** — message bubbles (user green right/AI gray left), collapsible shell items |
