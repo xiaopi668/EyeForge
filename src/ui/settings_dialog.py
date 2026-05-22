@@ -6,8 +6,7 @@ from PyQt5.QtWidgets import (
     QPushButton, QLabel, QTabWidget, QWidget, QMessageBox,
     QListWidget, QStackedWidget, QGroupBox, QFrame
 )
-from PyQt5.QtCore import Qt
-
+from PyQt5.QtCore import Qt, QTimer
 from src.utils.multimodal import is_multimodal
 from src.utils.crypto import encrypt
 from src.version import VERSION
@@ -19,14 +18,17 @@ logger = logging.getLogger(__name__)
 class SettingsDialog(QDialog):
     def __init__(self, config: dict, parent=None):
         super().__init__(parent)
-        self.setVisible(False)
         self.config = config.copy()
         self.lang = self.config.get("language", "zh")
         self.setWindowTitle("设置 - Settings")
         self.setMinimumWidth(480)
         self.setMinimumHeight(400)
         self._init_ui()
-        self.setVisible(True)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.setWindowOpacity(0)
+        QTimer.singleShot(60, lambda: self.setWindowOpacity(1))
 
     def _tr(self, zh: str, en: str) -> str:
         return en if self.lang == "en" else zh

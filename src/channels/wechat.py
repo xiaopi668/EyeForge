@@ -15,7 +15,6 @@ from urllib.error import URLError
 logger = logging.getLogger(__name__)
 
 ILINK_BASE = "https://ilinkai.weixin.qq.com"
-WX_BASE = "https://weknora.weixin.qq.com"
 _running = False
 _thread: Optional[threading.Thread] = None
 _on_message: Optional[Callable] = None
@@ -59,63 +58,39 @@ def _call(endpoint: str, body: dict, timeout: int = 30) -> Optional[dict]:
 
 
 def qr_login(progress_callback: Optional[Callable[[str], None]] = None) -> dict:
-    """Native QR code login via WeChat clawbot API. Returns {token, bot_id, user_id, base_url} or raises."""
+    """Native QR code login via iLink API. Returns {token, bot_id, user_id, base_url} or raises."""
     if progress_callback:
         progress_callback("获取二维码...")
 
-    req = Request(
-        f"{WX_BASE}/api/v1/wechat/qrcode",
-        data=b"{}",
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    resp = urlopen(req, timeout=15)
-    result = json.loads(resp.read().decode("utf-8"))
-    if not result.get("success"):
-        raise Exception(f"获取二维码失败: {result}")
-
-    qrcode_url = result["data"]["qrcode_url"]
-    qrcode_token = result["data"]["qrcode"]
+    resp = urlopen(f"{ILINK_BASE}/ilink/bot/get_bot_qrcode?bot_type=3", timeout=15)
+    data = json.loads(resp.read().decode("utf-8"))
+    qrcode_key = data["qrcode"]
+    qrcode_url = data["qrcode_img_content"]
 
     if progress_callback:
         progress_callback("qrcode_ready:" + qrcode_url)
 
     while True:
         try:
-            status_data = json.dumps({"qrcode": qrcode_token}).encode("utf-8")
             status_req = Request(
-                f"{WX_BASE}/api/v1/wechat/qrcode/status",
-                data=status_data,
-                headers={"Content-Type": "application/json"},
-                method="POST",
+                f"{ILINK_BASE}/ilink/bot/get_qrcode_status?qrcode={qrcode_key}",
+                headers={"iLink-App-ClientVersion": "1"},
             )
             status_resp = urlopen(status_req, timeout=40)
-            status_result = json.loads(status_resp.read().decode("utf-8"))
-
-            if not status_result.get("success"):
-                if progress_callback:
-                    progress_callback("轮询出错，重试...")
-                time.sleep(2)
-                continue
-
-            s = status_result["data"]["status"]
-            if s == "wait":
-                if progress_callback:
-                    progress_callback("等待扫描...")
-                time.sleep(1.5)
-            elif s == "scaned":
+            status = json.loads(status_resp.read().decode("utf-8"))
+            s = status.get("status", "")
+            if s == "scaned":
                 if progress_callback:
                     progress_callback("已扫码，请在手机上确认...")
                 time.sleep(1)
             elif s == "confirmed":
-                creds = status_result["data"]["credentials"]
                 if progress_callback:
                     progress_callback("登录成功！")
                 return {
-                    "token": creds["bot_token"],
-                    "bot_id": creds.get("ilink_bot_id", ""),
-                    "user_id": creds.get("ilink_user_id", ""),
-                    "base_url": status_result["data"].get("baseurl", ILINK_BASE),
+                    "token": status["bot_token"],
+                    "bot_id": status.get("ilink_bot_id", ""),
+                    "user_id": status.get("ilink_user_id", ""),
+                    "base_url": ILINK_BASE,
                 }
             elif s == "expired":
                 raise Exception("二维码已过期，请重新获取")
