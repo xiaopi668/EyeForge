@@ -45,6 +45,7 @@ def main():
             pass
         app = QApplication(sys.argv)
         app.setApplicationName("EyeForge")
+        app.setQuitOnLastWindowClosed(False)
 
         icon_path = os.path.join(os.path.dirname(__file__), "src", "logo.ico")
         if os.path.exists(icon_path):

@@ -325,7 +325,7 @@ class MainWindow(QMainWindow):
     def _init_tray(self):
         if not QSystemTrayIcon.isSystemTrayAvailable():
             return
-        self.tray = QSystemTrayIcon(self)
+        self.tray = QSystemTrayIcon()
         icon_path = os.path.join(os.path.dirname(__file__), "..", "..", "src", "logo.ico")
         if os.path.exists(icon_path):
             self.tray.setIcon(QIcon(icon_path))
@@ -728,6 +728,7 @@ class MainWindow(QMainWindow):
         if self.agent:
             self.agent.stop()
         if hasattr(self, "tray") and QSystemTrayIcon.isSystemTrayAvailable():
+            self.tray.show()
             self.hide()
             event.ignore()
         else:
