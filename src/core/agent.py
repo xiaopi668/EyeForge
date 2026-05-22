@@ -6,6 +6,7 @@ from typing import Optional
 from src.core.screen import ScreenCapture
 from src.core.actions import ActionController
 from src.core.vision import VisionProcessor
+from src.core.skills import SkillRegistry, create_registry
 from src.ai.llm_client import LLMClient
 from src.ai.prompts import get_system_prompt, get_task_prompt
 
@@ -39,6 +40,7 @@ class EyeForgeAgent:
     def __init__(self, config: dict, callback: StepCallback = None):
         self.config = config
         self.callback = callback or StepCallback()
+        self.skills = create_registry()
         self.screen = ScreenCapture()
         self.vision = VisionProcessor(
             quality=config.get("screenshot_quality", 70),
@@ -116,6 +118,14 @@ class EyeForgeAgent:
                 if result_text:
                     self.callback.on_result(result_text)
                 return True, ""
+            elif action_type == "skill":
+                skill_name = params.get("name", "")
+                skill_params = {k: v for k, v in params.items() if k != "name"}
+                success, result = self.skills.execute(skill_name, skill_params)
+                if success:
+                    return False, f"技能 '{skill_name}' 执行结果:\n{result}"
+                else:
+                    return False, f"技能执行失败: {result}"
             else:
                 logger.warning(f"Unknown action type: {action_type}")
                 return False, f"(unknown action: {action_type})"
@@ -130,6 +140,9 @@ class EyeForgeAgent:
         self._language = self.config.get("language", "zh")
         use_vision = self.config.get("use_vision", True)
         system_prompt = get_system_prompt(self._language, use_vision)
+        skills_section = self.skills.get_prompt_section()
+        if skills_section:
+            system_prompt += skills_section
         self._sw, self._sh = self.screen.get_screen_size()
         user_prompt = get_task_prompt(task, self._sw, self._sh, self._language)
         self._messages = [
