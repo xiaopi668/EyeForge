@@ -20,7 +20,7 @@ class LLMClient:
             import openai
             api_key = decrypt(self.config.get("openai_api_key", ""))
             if api_key:
-                self._client = openai.OpenAI(api_key=api_key)
+                self._client = openai.OpenAI(api_key=api_key, max_retries=0)
             else:
                 self._client = None
         elif self.provider == "anthropic":
@@ -37,7 +37,7 @@ class LLMClient:
             api_key = decrypt(self.config.get("custom_api_key", ""))
             base_url = self.config.get("custom_base_url", "https://api.openai.com/v1")
             if api_key and base_url:
-                self._client = openai.OpenAI(api_key=api_key, base_url=base_url)
+                self._client = openai.OpenAI(api_key=api_key, base_url=base_url, max_retries=0)
             else:
                 self._client = None
         elif self.provider == "gemini":
@@ -46,7 +46,8 @@ class LLMClient:
             if api_key:
                 self._client = openai.OpenAI(
                     api_key=api_key,
-                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                    max_retries=0,
                 )
             else:
                 self._client = None
@@ -113,7 +114,11 @@ class LLMClient:
             )
             return response.choices[0].message.content
         except Exception as e:
-            logger.error(f"OpenAI API error: {e}")
+            err_str = str(e)
+            if "429" in err_str or "Too Many Requests" in err_str:
+                logger.error(f"Rate limit exceeded (429): {e}")
+            else:
+                logger.error(f"OpenAI API error: {e}")
             return None
 
     def _chat_anthropic(self, messages: list, image_base64: str = None) -> Optional[str]:

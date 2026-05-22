@@ -192,7 +192,7 @@ class EyeForgeAgent:
             try:
                 response = self.llm.chat(self._messages)
                 if not response:
-                    self.callback.on_error("LLM 响应为空，请检查 API 配置")
+                    self.callback.on_error("LLM 响应为空（API 限流或密钥无效），请检查 API 配置或稍后重试")
                     break
 
                 action, thought = self._process_response(response)
