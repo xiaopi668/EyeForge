@@ -76,8 +76,9 @@ class ChatBubble(QFrame):
         self._label.setWordWrap(True)
         self._label.setStyleSheet(
             f"background: {bg}; color: {fg}; padding: 8px 12px; "
-            f"border-radius: 8px; font-size: 13px; max-width: 360px;"
+            f"border-radius: 8px; font-size: 13px;"
         )
+        self._label.setMaximumWidth(400)
         self._label.setAlignment(align)
         layout.addWidget(self._label, 0, align)
 
@@ -117,7 +118,8 @@ class FloatWindow(QWidget):
         header_row.addWidget(title)
         header_row.addStretch()
         self._status_label = QLabel("")
-        self._status_label.setStyleSheet("color: #888; font-size: 11px;")
+        self._status_label.setStyleSheet("color: #888; font-size: 11px; background: transparent;")
+        self._status_label.setVisible(False)
         header_row.addWidget(self._status_label)
         self._close_btn = QPushButton("✕")
         self._close_btn.setStyleSheet(
@@ -137,7 +139,9 @@ class FloatWindow(QWidget):
             "QScrollBar:vertical { width: 6px; background: #2d2d2d; }"
             "QScrollBar::handle:vertical { background: #555; border-radius: 3px; }"
         )
+        self._scroll.viewport().setStyleSheet("background: transparent;")
         self._chat_widget = QWidget()
+        self._chat_widget.setStyleSheet("background: transparent;")
         self._chat_layout = QVBoxLayout(self._chat_widget)
         self._chat_layout.setAlignment(Qt.AlignTop)
         self._chat_layout.setSpacing(4)
@@ -203,6 +207,7 @@ class FloatWindow(QWidget):
         self.input_field.clear()
         self._add_user_message(text)
         self._status_label.setText(self._tr("⏳ 执行中...", "⏳ Executing..."))
+        self._status_label.setVisible(True)
         self.submit_btn.setEnabled(False)
         self.input_field.setEnabled(False)
 
@@ -212,18 +217,21 @@ class FloatWindow(QWidget):
             def __init__(self, fw):
                 self.fw = fw
                 self._shells = []
+            def on_status(self, msg):
+                self.fw._status_label.setText(msg)
+                self.fw._status_label.setVisible(bool(msg))
             def on_shell_command(self, cmd, output):
                 self._shells.append((cmd, output))
             def on_result(self, result: str):
+                self.fw._status_label.setVisible(False)
                 bubble = ChatBubble(result, False, self.fw)
                 for cmd, output in self._shells:
                     bubble.add_shell(cmd, output)
                 self.fw._chat_layout.addWidget(bubble)
                 QTimer.singleShot(0, self.fw._scroll_to_bottom)
             def on_error(self, error: str):
+                self.fw._status_label.setVisible(False)
                 self.fw._add_ai_message(f"✗ {error}")
-            def on_status(self, msg):
-                self.fw._status_label.setText(msg)
 
         cb = FloatCallback(self)
 
