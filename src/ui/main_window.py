@@ -410,9 +410,8 @@ class MainWindow(QMainWindow):
         if not self.config.get("wc_enabled", False):
             return
         token = self.config.get("wc_token", "").strip()
-        uin = self.config.get("wc_uin", "").strip()
         wechat_mod.set_on_message(self._on_wechat_message)
-        wechat_mod.start(bot_token=token, bot_uin=uin)
+        wechat_mod.start(bot_token=token, log_dir="logs")
         lang = self.config.get("language", "zh")
         self._log(f"WeChat iLink client started" if lang == "en"
                   else f"微信 iLink 客户端已启动", "info")

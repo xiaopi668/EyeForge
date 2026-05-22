@@ -520,25 +520,16 @@ class SettingsDialog(QDialog):
         self._wc_token = QLineEdit(self.config.get("wc_token", ""))
         self._wc_token.setEchoMode(QLineEdit.Password)
         form.addRow(self._tr("Bot Token:", "Bot Token:"), self._wc_token)
-        self._wc_uin = QLineEdit(self.config.get("wc_uin", ""))
-        form.addRow(self._tr("Bot UIN:", "Bot UIN:"), self._wc_uin)
 
-        btn_row = QHBoxLayout()
-        self._wc_import_btn = QPushButton(self._tr("📥 从 OpenClaw 导入", "📥 Import from OpenClaw"))
-        self._wc_import_btn.clicked.connect(self._wc_import_from_openclaw)
-        self._wc_scan_btn = QPushButton(self._tr("📱 扫码登录", "📱 QR Login"))
+        self._wc_scan_btn = QPushButton(self._tr("📱 扫码登录微信", "📱 QR Login (WeChat)"))
         self._wc_scan_btn.clicked.connect(self._wc_qr_login)
-        btn_row.addWidget(self._wc_import_btn)
-        btn_row.addWidget(self._wc_scan_btn)
-        form.addRow(btn_row)
+        form.addRow(self._wc_scan_btn)
 
         tip = QLabel(self._tr(
-            "直接接入微信 iLink Bot API，无需 OpenClaw 运行。\n"
-            "点击「导入」从已安装 OpenClaw 的电脑读取 Token。\n"
-            "点击「扫码」通过 QR 码登录微信（需 Node.js）。",
-            "Native iLink API client, no OpenClaw runtime needed.\n"
-            "Click 'Import' to read token from an existing OpenClaw install.\n"
-            "Click 'QR Login' to scan QR with WeChat (requires Node.js).",
+            "原生接入微信 iLink Bot API，无需任何外部依赖。\n"
+            "点击上方按钮扫码登录，Token 自动填入。",
+            "Native WeChat iLink API client, no external dependencies.\n"
+            "Click the button above to scan QR code and auto-fill token.",
         ))
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #888; font-size: 11px;")
@@ -550,114 +541,62 @@ class SettingsDialog(QDialog):
             self._wc_status.setText(self._tr("状态: 运行中", "Status: Running"))
         return page
 
-    def _wc_import_from_openclaw(self):
-        import os, glob
-        state_dirs = [
-            os.path.expanduser("~/.openclaw/state/"),
-            os.path.expanduser("~/.local/share/openclaw/state/"),
-        ]
-        found = []
-        for d in state_dirs:
-            if os.path.isdir(d):
-                for f in glob.glob(os.path.join(d, "*weixin*")):
-                    found.append(f)
-                for f in glob.glob(os.path.join(d, "*wechat*")):
-                    found.append(f)
-                for f in glob.glob(os.path.join(d, "credentials*")):
-                    found.append(f)
-        if not found:
-            QMessageBox.information(self,
-                self._tr("未找到", "Not Found"),
-                self._tr("未找到 OpenClaw 微信凭证文件。\n请先执行: openclaw channels login --channel openclaw-weixin",
-                         "No OpenClaw WeChat credentials found.\nRun: openclaw channels login --channel openclaw-weixin"))
-            return
-        for path in found:
-            try:
-                with open(path) as f:
-                    data = json.load(f)
-                    t = data.get("token") or data.get("bot_token") or data.get("access_token") or ""
-                    u = data.get("uin") or data.get("bot_uin") or ""
-                    if t:
-                        self._wc_token.setText(t)
-                        if u:
-                            self._wc_uin.setText(u)
-                        QMessageBox.information(self,
-                            self._tr("导入成功", "Imported"),
-                            self._tr(f"已从 {path} 导入 Token", f"Imported token from {path}"))
-                        return
-            except Exception:
-                continue
-        QMessageBox.warning(self,
-            self._tr("导入失败", "Failed"),
-            self._tr("在凭证文件中未找到有效 Token", "No valid token found in credential files"))
-
     def _wc_qr_login(self):
-        try:
-            import subprocess, tempfile, threading, time
-            from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QApplication
-            from PyQt5.QtCore import Qt, QTimer
-            from PyQt5.QtGui import QPixmap
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel
+        from PyQt5.QtCore import Qt, QTimer
+        from PyQt5.QtGui import QPixmap
+        from urllib.request import urlopen
+        import io, threading
 
-            dialog = QDialog(self)
-            dialog.setWindowTitle(self._tr("微信扫码登录", "WeChat QR Login"))
-            dialog.setMinimumSize(300, 350)
-            dl = QVBoxLayout(dialog)
-            hint = QLabel(self._tr("正在启动扫码登录...", "Starting QR login..."))
-            hint.setAlignment(Qt.AlignCenter)
-            dl.addWidget(hint)
-            dialog.show()
-            QApplication.processEvents()
+        dialog = QDialog(self)
+        dialog.setWindowTitle(self._tr("微信扫码登录", "WeChat QR Login"))
+        dialog.setMinimumSize(320, 380)
+        dl = QVBoxLayout(dialog)
 
+        self._qr_image = QLabel()
+        self._qr_image.setAlignment(Qt.AlignCenter)
+        self._qr_image.setMinimumSize(280, 280)
+        dl.addWidget(self._qr_image)
+
+        self._qr_status = QLabel(self._tr("正在获取二维码...", "Getting QR code..."))
+        self._qr_status.setAlignment(Qt.AlignCenter)
+        dl.addWidget(self._qr_status)
+
+        close_btn = QPushButton(self._tr("关闭", "Close"))
+        close_btn.clicked.connect(dialog.reject)
+        dl.addWidget(close_btn)
+
+        dialog.show()
+
+        def progress(msg: str):
+            if msg.startswith("qrcode_ready:"):
+                url = msg[len("qrcode_ready:"):]
+                try:
+                    img_data = urlopen(url, timeout=10).read()
+                    pixmap = QPixmap()
+                    pixmap.loadFromData(img_data)
+                    self._qr_image.setPixmap(pixmap.scaled(
+                        280, 280, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                    self._qr_status.setText(self._tr("请用微信扫描二维码", "Scan QR code with WeChat"))
+                except Exception as e:
+                    self._qr_status.setText(self._tr(f"加载二维码失败: {e}", f"Failed to load QR: {e}"))
+            else:
+                self._qr_status.setText(msg)
+
+        def login_thread():
+            from src.channels import wechat as wc_mod
             try:
-                result = subprocess.run(
-                    ["npx", "-y", "@tencent-weixin/openclaw-weixin-cli", "login", "--json"],
-                    capture_output=True, text=True, timeout=60
-                )
-            except FileNotFoundError:
-                QMessageBox.warning(self,
-                    self._tr("需要 Node.js", "Node.js required"),
-                    self._tr("扫码登录需要 Node.js (npx)。\n请先安装 Node.js: https://nodejs.org",
-                             "QR login requires Node.js (npx).\nInstall: https://nodejs.org"))
-                dialog.close()
-                return
-            except subprocess.TimeoutExpired:
-                QMessageBox.warning(self,
-                    self._tr("超时", "Timeout"),
-                    self._tr("登录超时，请重试", "Login timed out, please retry"))
-                dialog.close()
-                return
+                result = wc_mod.qr_login(progress_callback=progress)
+                token = result["token"]
+                self._wc_token.setText(token)
+                self._qr_status.setText(self._tr("✓ 登录成功！Token 已填入", "✓ Login success! Token filled"))
+                QTimer.singleShot(1000, dialog.accept)
+            except Exception as e:
+                self._qr_status.setText(self._tr(f"登录失败: {e}", f"Login failed: {e}"))
 
-            if result.returncode != 0:
-                hint.setText(self._tr("登录失败，请重试", "Login failed, please retry"))
-                QApplication.processEvents()
-                time.sleep(1.5)
-                dialog.close()
-                return
-
-            try:
-                login_data = json.loads(result.stdout.strip())
-                token = login_data.get("token") or login_data.get("bot_token") or ""
-                uin = login_data.get("uin") or login_data.get("bot_uin") or ""
-                if token:
-                    self._wc_token.setText(token)
-                    if uin:
-                        self._wc_uin.setText(uin)
-                    hint.setText(self._tr("✓ 登录成功！Token 已填入", "✓ Login success! Token filled"))
-                    QApplication.processEvents()
-                    time.sleep(0.8)
-                else:
-                    hint.setText(self._tr("登录成功但未获取到 Token", "Login success but no token found"))
-                    QApplication.processEvents()
-                    time.sleep(1.5)
-            except json.JSONDecodeError:
-                hint.setText(self._tr("登录完成，尝试从 OpenClaw 状态目录导入...", "Login done, importing from OpenClaw state..."))
-                QApplication.processEvents()
-                self._wc_import_from_openclaw()
-                time.sleep(0.5)
-
-            dialog.close()
-        except Exception as e:
-            QMessageBox.critical(self, self._tr("错误", "Error"), str(e))
+        t = threading.Thread(target=login_thread, daemon=True)
+        t.start()
+        dialog.exec_()
 
     def _make_wcom_page(self):
         page = QWidget()
@@ -882,7 +821,6 @@ class SettingsDialog(QDialog):
         self.config["ws_token"] = self._ws_token.text().strip()
         self.config["wc_enabled"] = "开启" in self._wc_enabled.currentText()
         self.config["wc_token"] = self._wc_token.text().strip()
-        self.config["wc_uin"] = self._wc_uin.text().strip()
         self.config["wcom_enabled"] = "开启" in self._wcom_enabled.currentText()
         self.config["wcom_corp_id"] = self._wcom_corp_id.text().strip()
         self.config["wcom_agent_id"] = self._wcom_agent_id.text().strip()

@@ -271,3 +271,7 @@ AttributeError: 'MainWindow' object has no attribute '_on_float_task'
 2026-05-21 12:53:35,400 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+v -> voice
 2026-05-21 12:53:35,400 [INFO] src.utils.websocket_server: WebSocket server stopped
 2026-05-21 12:53:35,417 [INFO] src.channels.wechat: WeChat iLink client stopped
+2026-05-22 08:46:19,266 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+e -> float
+2026-05-22 08:46:19,268 [INFO] src.utils.hotkey: Win hotkey registered: ctrl+shift+v -> voice
+2026-05-22 08:46:19,269 [INFO] src.utils.websocket_server: WebSocket server stopped
+2026-05-22 08:46:19,278 [INFO] src.channels.wechat: WeChat iLink client stopped
