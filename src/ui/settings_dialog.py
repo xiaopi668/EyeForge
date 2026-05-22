@@ -765,8 +765,62 @@ class SettingsDialog(QDialog):
         return page
 
     def _update_tab(self):
-        ...
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        from PyQt5.QtGui import QDesktopServices
+        from PyQt5.QtCore import QUrl
+
+        layout.addWidget(QLabel(
+            f'<b>{"Current Version" if self.lang == "en" else "当前版本"}:</b> v{VERSION}'))
+        layout.addWidget(QLabel(" "))
+
+        self._update_status = QLabel("")
+        layout.addWidget(self._update_status)
+
+        self._update_btn = QPushButton(
+            self._tr("🔄 检查更新", "🔄 Check Update"))
+        self._update_btn.setStyleSheet(
+            "QPushButton { background-color: #6c5ce7; color: white; font-weight: bold; padding: 6px 16px; }"
+            "QPushButton:hover { background-color: #5a4bd1; }")
+        self._update_btn.clicked.connect(self._do_check_update)
+        layout.addWidget(self._update_btn)
+
+        self._update_links = QHBoxLayout()
+        self._gh_btn = QPushButton("📦 GitHub Releases")
+        self._gh_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://github.com/xiaopi668/EyeForge/releases")))
+        self._gc_btn = QPushButton("📦 GitCode Releases")
+        self._gc_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://gitcode.com/xiaopi668/EyeForge/releases")))
+        self._update_links.addWidget(self._gh_btn)
+        self._update_links.addWidget(self._gc_btn)
+        layout.addLayout(self._update_links)
+
+        layout.addStretch()
         return widget
+
+    def _do_check_update(self):
+        self._update_btn.setEnabled(False)
+        self._update_btn.setText(self._tr("检查中...", "Checking..."))
+        self._update_status.setText("⏳ " + (self._tr("正在检查...", "Checking...")))
+        QApplication.processEvents()
+
+        result = check_update()
+
+        if result["latest"] != "Unknown":
+            info = (f'<b>{"Latest" if self.lang == "en" else "最新版本"}:</b> v{result["latest"]}<br>'
+                    f'<b>{"Source" if self.lang == "en" else "来源"}:</b> {result["source"] or "GitHub"}')
+            if result["update_available"]:
+                info += f'<br><b style="color:#00d4aa;">✶ {"New version available!" if self.lang == "en" else "有新版本可用！"}</b>'
+            else:
+                info += f'<br>✓ {"Up to date" if self.lang == "en" else "已是最新版本"}'
+            self._update_status.setText(info)
+        else:
+            self._update_status.setText(
+                self._tr("✗ 检查更新失败 (网络或服务异常)", "✗ Update check failed (network or service error)"))
+
+        self._update_btn.setEnabled(True)
+        self._update_btn.setText(self._tr("🔄 检查更新", "🔄 Check Update"))
 
     def _skills_tab(self):
         widget = QWidget()
