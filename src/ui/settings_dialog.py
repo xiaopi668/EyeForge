@@ -27,26 +27,24 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("设置 - Settings")
         self.setMinimumWidth(480)
         self.setMinimumHeight(400)
-        self.setAttribute(Qt.WA_OpaquePaintEvent, True)
-        self.setAttribute(Qt.WA_NoSystemBackground, True)
-        self._shown = False
+        self.move(-10000, -10000)
         self._init_ui()
+        QTimer.singleShot(0, self._center_on_parent)
 
-    def showEvent(self, event):
-        if not self._shown:
-            self._shown = True
-            self.setAttribute(Qt.WA_OpaquePaintEvent, False)
-            self.setAttribute(Qt.WA_NoSystemBackground, False)
-        super().showEvent(event)
+    def _center_on_parent(self):
+        if self.parent() and self.parent().isVisible():
+            center = self.parent().geometry().center()
+        else:
+            center = QApplication.primaryScreen().geometry().center()
+        rect = self.geometry()
+        self.move(center.x() - rect.width() // 2, center.y() - rect.height() // 2)
 
     def _tr(self, zh: str, en: str) -> str:
         return en if self.lang == "en" else zh
 
     def _init_ui(self):
-        self.setUpdatesEnabled(False)
         layout = QVBoxLayout(self)
         tabs = QTabWidget()
-        tabs.hide()
 
         tabs.addTab(self._llm_tab(), self._tr("AI 模型", "AI Model"))
         tabs.addTab(self._capture_tab(), self._tr("截屏设置", "Capture"))
@@ -90,8 +88,6 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._update_tab, self._tr("更新", "Update"))
 
         layout.addWidget(tabs)
-        tabs.show()
-        self.setUpdatesEnabled(True)
 
         btn_layout = QHBoxLayout()
         save_btn = QPushButton(self._tr("保存", "Save"))
