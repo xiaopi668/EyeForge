@@ -19,12 +19,14 @@ logger = logging.getLogger(__name__)
 class SettingsDialog(QDialog):
     def __init__(self, config: dict, parent=None):
         super().__init__(parent)
+        self.setVisible(False)
         self.config = config.copy()
         self.lang = self.config.get("language", "zh")
         self.setWindowTitle("设置 - Settings")
         self.setMinimumWidth(480)
         self.setMinimumHeight(400)
         self._init_ui()
+        self.setVisible(True)
 
     def _tr(self, zh: str, en: str) -> str:
         return en if self.lang == "en" else zh
