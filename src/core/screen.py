@@ -5,33 +5,44 @@ from PIL import Image
 from PyQt5.QtGui import QImage, QPixmap
 
 
-def _detect_scale():
-    import pyautogui
-    sct = mss.mss()
-    native = sct.monitors[1]
-    nw, nh = native["width"], native["height"]
-    vw, vh = pyautogui.size()
-    return vw / nw if nw else 1.0, vh / nh if nh else 1.0
-
-
 class ScreenCapture:
     def __init__(self):
-        self.sct = mss.mss()
+        self._sct = None
         self._monitor_index = 1
-        self.scale_x, self.scale_y = _detect_scale()
+        self.scale_x = 1.0
+        self.scale_y = 1.0
+
+    def _ensure_init(self):
+        if self._sct is not None:
+            return
+        import pyautogui
+        self._sct = mss.mss()
+        native = self._sct.monitors[1]
+        nw, nh = native["width"], native["height"]
+        vw, vh = pyautogui.size()
+        self.scale_x = vw / nw if nw else 1.0
+        self.scale_y = vh / nh if nh else 1.0
 
     @property
     def monitors(self):
-        return self.sct.monitors
+        self._ensure_init()
+        return self._sct.monitors
 
     @property
     def current_monitor(self):
-        return self.sct.monitors[self._monitor_index]
+        self._ensure_init()
+        return self._sct.monitors[self._monitor_index]
 
     def set_monitor(self, index: int):
-        if 0 < index < len(self.sct.monitors):
+        self._ensure_init()
+        if 0 < index < len(self._sct.monitors):
             self._monitor_index = index
-            self.scale_x, self.scale_y = _detect_scale()
+            import pyautogui
+            native = self._sct.monitors[self._monitor_index]
+            nw, nh = native["width"], native["height"]
+            vw, vh = pyautogui.size()
+            self.scale_x = vw / nw if nw else 1.0
+            self.scale_y = vh / nh if nh else 1.0
 
     def _resize_to_virtual(self, img: Image.Image) -> Image.Image:
         if self.scale_x == 1.0 and self.scale_y == 1.0:
@@ -41,6 +52,7 @@ class ScreenCapture:
         return img.resize((new_w, new_h), Image.LANCZOS)
 
     def capture_pil(self, region=None) -> Image.Image:
+        self._ensure_init()
         if region:
             monitor = {
                 "left": int(region["left"]),
@@ -50,7 +62,7 @@ class ScreenCapture:
             }
         else:
             monitor = self.current_monitor
-        sct_img = self.sct.grab(monitor)
+        sct_img = self._sct.grab(monitor)
         img = Image.frombytes("RGB", sct_img.size, sct_img.rgb)
         return self._resize_to_virtual(img)
 
