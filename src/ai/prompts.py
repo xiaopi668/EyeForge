@@ -230,6 +230,10 @@ User's command: {task}
 Choose the appropriate skill to complete the task.
 """
 
+CHAT_PROMPT_ZH = """你是一个智能聊天助手，请用友好的语气回复用户的消息。你是 EyeForge AI 助手的一部分。回答简洁自然。"""
+
+CHAT_PROMPT_EN = """You are an intelligent chat assistant. Reply to the user in a friendly tone. You are part of EyeForge AI Assistant. Answer concisely and naturally."""
+
 
 def get_system_prompt(language="zh", use_vision=True):
     if language == "zh":

@@ -79,6 +79,16 @@ class LLMClient:
             return self._chat_custom(messages, image_base64)
         return None
 
+    def simple_chat(self, message: str) -> Optional[str]:
+        from src.ai.prompts import CHAT_PROMPT_ZH, CHAT_PROMPT_EN
+        lang = self.config.get("language", "zh")
+        system = CHAT_PROMPT_ZH if lang == "zh" else CHAT_PROMPT_EN
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": message},
+        ]
+        return self.chat(messages)
+
     def _chat_openai(self, messages: list, image_base64: str = None) -> Optional[str]:
         if not self._client:
             return None

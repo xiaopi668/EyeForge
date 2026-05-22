@@ -400,20 +400,15 @@ class MainWindow(QMainWindow):
 
     def _on_ws_task(self, task: str) -> dict:
         try:
-            from src.core.agent import EyeForgeAgent, StepCallback
-
-            class WsCallback(StepCallback):
-                def __init__(self):
-                    self.result = {"status": "error", "message": "unknown"}
-                def on_complete(self):
-                    self.result = {"status": "success", "message": "task completed"}
-                def on_error(self, error: str):
-                    self.result = {"status": "error", "message": error}
-
-            callback = WsCallback()
-            agent = EyeForgeAgent(self.config, callback)
-            agent.run(task)
-            return callback.result
+            from src.ai.llm_client import LLMClient
+            llm = LLMClient(
+                provider=self.config.get("llm_provider", "openai"),
+                config=self.config,
+            )
+            if not llm.is_available():
+                return {"status": "error", "message": "LLM not configured"}
+            response = llm.simple_chat(task)
+            return {"status": "success", "message": response or "no response"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
@@ -430,28 +425,19 @@ class MainWindow(QMainWindow):
 
     def _on_wechat_message(self, user_id: str, text: str, context_token: str):
         try:
-            from src.core.agent import EyeForgeAgent, StepCallback
-
-            class WeChatCallback(StepCallback):
-                def __init__(self, uid, ctoken):
-                    self.uid = uid
-                    self.ctoken = ctoken
-                    self.answer = ""
-                def on_result(self, result: str):
-                    self.answer = result
-                def on_complete(self):
-                    if self.answer:
-                        wechat_mod.queue_outgoing(self.uid, self.answer)
-                def on_error(self, error: str):
-                    wechat_mod.queue_outgoing(self.uid, f"抱歉，处理时出错: {error}")
-
-            cb = WeChatCallback(user_id, context_token)
-            agent = EyeForgeAgent(self.config, cb)
-            agent.run(text)
-            if cb.answer:
-                wechat_mod.queue_outgoing(user_id, cb.answer)
+            from src.ai.llm_client import LLMClient
+            llm = LLMClient(
+                provider=self.config.get("llm_provider", "openai"),
+                config=self.config,
+            )
+            if not llm.is_available():
+                wechat_mod.queue_outgoing(user_id, "LLM 未配置，请在设置中填写 API Key")
+                return
+            reply = llm.simple_chat(text)
+            if reply:
+                wechat_mod.queue_outgoing(user_id, reply)
         except Exception as e:
-            logger.error(f"wechat agent error: {e}")
+            logger.error(f"wechat chat error: {e}")
             wechat_mod.queue_outgoing(user_id, f"Error: {str(e)}")
 
     def _on_hotkey(self, action: str):
