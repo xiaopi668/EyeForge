@@ -338,19 +338,19 @@ class MainWindow(QMainWindow):
 
     def _update_tray_menu(self):
         lang = self.config.get("language", "zh")
-        tray_menu = QMenu()
+        self.tray_menu = QMenu()
         show_action = QAction("Show Window" if lang == "en" else "显示窗口", self)
         show_action.triggered.connect(self.show)
         update_action = QAction("Check Update" if lang == "en" else "检查更新", self)
         update_action.triggered.connect(self._check_update_dialog)
         quit_action = QAction("Quit" if lang == "en" else "退出", self)
         quit_action.triggered.connect(self._quit_app)
-        tray_menu.addAction(show_action)
-        tray_menu.addSeparator()
-        tray_menu.addAction(update_action)
-        tray_menu.addSeparator()
-        tray_menu.addAction(quit_action)
-        self.tray.setContextMenu(tray_menu)
+        self.tray_menu.addAction(show_action)
+        self.tray_menu.addSeparator()
+        self.tray_menu.addAction(update_action)
+        self.tray_menu.addSeparator()
+        self.tray_menu.addAction(quit_action)
+        self.tray.setContextMenu(self.tray_menu)
 
     def _init_hotkeys(self):
         if not hotkey_available():
