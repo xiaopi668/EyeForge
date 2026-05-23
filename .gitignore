@@ -4,3 +4,5 @@ logs/
 venv/
 /EyeForge_Setup.exe
 /EyeForge_Setup.old
+/setup_stub.cs
+/build_installer.py
