@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (
     QListWidget, QStackedWidget, QGroupBox, QFrame,
     QCheckBox, QTextEdit, QListWidgetItem,
 )
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from src.utils.multimodal import is_multimodal
 from src.utils.crypto import encrypt
 from src.version import VERSION
@@ -22,39 +22,37 @@ logger = logging.getLogger(__name__)
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, config: dict, parent=None):
+    saved = pyqtSignal(dict)
+
+    def __init__(self, config: dict, parent=None, embedded=False):
         super().__init__(parent)
         self.config = config.copy()
         self.lang = self.config.get("language", "zh")
-        self.setWindowTitle("设置 - Settings")
-        self.setMinimumWidth(480)
-        self.setMinimumHeight(400)
-        self._init_ui()
-        self._centered = False
-
-    def showEvent(self, event):
-        if not self._centered:
-            self._centered = True
-            self._center_on_parent()
-        super().showEvent(event)
-
-    def _center_on_parent(self):
-        if self.parent() and self.parent().isVisible():
-            center = self.parent().geometry().center()
+        self._embedded = embedded
+        if embedded:
+            self.setWindowFlags(Qt.Widget)
         else:
-            center = QApplication.primaryScreen().geometry().center()
-        rect = self.geometry()
-        self.move(center.x() - rect.width() // 2, center.y() - rect.height() // 2)
+            self.setWindowTitle("设置 - Settings")
+        self.setMinimumWidth(700)
+        self.setMinimumHeight(500)
+        self._init_ui()
 
     def _tr(self, zh: str, en: str) -> str:
         return en if self.lang == "en" else zh
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-        tabs = QTabWidget()
 
-        tabs.addTab(self._llm_tab(), self._tr("AI 模型", "AI Model"))
-        tabs.addTab(self._capture_tab(), self._tr("截屏设置", "Capture"))
+        body = QHBoxLayout()
+        self._sidebar = QListWidget()
+        self._sidebar.setFixedWidth(130)
+        self._sidebar.setFrameShape(QFrame.NoFrame)
+
+        self._stack = QStackedWidget()
+        pages = [
+            (self._llm_tab(), self._tr("AI 模型", "AI Model")),
+            (self._capture_tab(), self._tr("截屏设置", "Capture")),
+        ]
         self._general_tab_widget, general_layout = QWidget(), QFormLayout()
         self._lang_combo = QComboBox()
         self._lang_combo.addItems(["中文 (zh)", "English (en)"])
@@ -86,28 +84,77 @@ class SettingsDialog(QDialog):
         self._general_tab_widget.setLayout(general_layout)
         self._wakeword_check.currentIndexChanged.connect(self._toggle_wakeword_rows)
         self._toggle_wakeword_rows()
-        tabs.addTab(self._general_tab_widget, self._tr("常规", "General"))
+        pages.append((self._general_tab_widget, self._tr("常规", "General")))
 
         self._channels_tab = self._channels_tab()
-        tabs.addTab(self._channels_tab, self._tr("通道", "Channels"))
+        pages.append((self._channels_tab, self._tr("通道", "Channels")))
 
         self._update_tab = self._update_tab()
-        tabs.addTab(self._update_tab, self._tr("更新", "Update"))
+        pages.append((self._update_tab, self._tr("更新", "Update")))
 
         self._skills_tab = self._skills_tab()
-        tabs.addTab(self._skills_tab, self._tr("技能", "Skills"))
+        pages.append((self._skills_tab, self._tr("技能", "Skills")))
 
-        layout.addWidget(tabs)
+        for page, title in pages:
+            self._stack.addWidget(page)
+            self._sidebar.addItem(title)
+
+        self._sidebar.setCurrentRow(0)
+        self._sidebar.currentRowChanged.connect(self._stack.setCurrentIndex)
+
+        body.addWidget(self._sidebar)
+        body.addWidget(self._stack, 1)
+        layout.addLayout(body)
+
+        self._style_sidebar()
 
         btn_layout = QHBoxLayout()
         save_btn = QPushButton(self._tr("保存", "Save"))
-        cancel_btn = QPushButton(self._tr("取消", "Cancel"))
         save_btn.clicked.connect(self._save)
-        cancel_btn.clicked.connect(self.reject)
         btn_layout.addStretch()
         btn_layout.addWidget(save_btn)
-        btn_layout.addWidget(cancel_btn)
+        if not self._embedded:
+            cancel_btn = QPushButton(self._tr("取消", "Cancel"))
+            cancel_btn.clicked.connect(self.reject)
+            btn_layout.addWidget(cancel_btn)
         layout.addLayout(btn_layout)
+
+    def _style_sidebar(self):
+        theme = self.config.get("theme", "dark")
+        if theme == "dark":
+            bg = "#2d2d2d"
+            fg = "#d4d4d4"
+            sel_bg = "#3c3c3c"
+            sel_fg = "#00d4aa"
+            border = "#444"
+        else:
+            bg = "#f5f5f5"
+            fg = "#333"
+            sel_bg = "#e0e0e0"
+            sel_fg = "#00a88a"
+            border = "#ccc"
+        self._sidebar.setStyleSheet(f"""
+            QListWidget {{
+                background-color: {bg};
+                color: {fg};
+                border: none;
+                border-right: 1px solid {border};
+                padding: 8px 0;
+                outline: none;
+            }}
+            QListWidget::item {{
+                padding: 10px 16px;
+                border: none;
+            }}
+            QListWidget::item:selected {{
+                background-color: {sel_bg};
+                color: {sel_fg};
+                border-left: 3px solid {sel_fg};
+            }}
+            QListWidget::item:hover {{
+                background-color: {sel_bg};
+            }}
+        """)
 
     def _toggle_wakeword_rows(self):
         visible = "开启" in self._wakeword_check.currentText()
@@ -1111,7 +1158,10 @@ class SettingsDialog(QDialog):
         try:
             with open("config.json", "w", encoding="utf-8") as f:
                 json.dump(self.config, f, ensure_ascii=False, indent=2)
-            self.accept()
+            if self._embedded:
+                self.saved.emit(self.config)
+            else:
+                self.accept()
         except Exception as e:
             QMessageBox.critical(self, self._tr("错误", "Error"), f"{self._tr('保存配置失败:', 'Failed to save config:')}\n{e}")
 

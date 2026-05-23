@@ -9,9 +9,9 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QLineEdit, QPushButton, QLabel, QCheckBox,
     QMessageBox, QApplication, QSystemTrayIcon, QMenu, QAction,
-    QTabWidget, QSplitter, QFrame
+    QTabWidget, QSplitter, QFrame, QListWidget, QStackedWidget
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize
 from PyQt5.QtGui import QFont, QIcon, QPixmap, QTextCursor
 
 from src.ui.settings_dialog import SettingsDialog
@@ -136,27 +136,43 @@ class MainWindow(QMainWindow):
 
         central = QWidget()
         self.setCentralWidget(central)
-        main_layout = QVBoxLayout(central)
+        root = QHBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
+        self._sidebar = QListWidget()
+        self._sidebar.setFixedWidth(56)
+        self._sidebar.setIconSize(QSize(22, 22))
+        self._sidebar.setSpacing(2)
+        self._sidebar.setFrameShape(QFrame.NoFrame)
+        self._sidebar.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._sidebar.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._sidebar.setFocusPolicy(Qt.NoFocus)
+
+        self._sidebar.addItem("🏠")
+        self._sidebar.addItem("⚙")
+        self._sidebar.setCurrentRow(0)
+
+        self._stack = QStackedWidget()
+
+        # --- Home page ---
+        home_page = QWidget()
+        home_layout = QVBoxLayout(home_page)
         self.header_label = QLabel(f"🧿 EyeForge v{VERSION} — AI 屏幕操控助手")
         self.header_label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 8px; color: #00d4aa;")
-        main_layout.addWidget(self.header_label)
+        home_layout.addWidget(self.header_label)
 
         splitter = QSplitter(Qt.Horizontal)
-
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 0, 0)
-
         self.preview = ScreenPreview()
         lang = self.config.get("language", "zh")
         self.preview.set_placeholder("Waiting for screenshot..." if lang == "en" else "等待截图...")
         left_layout.addWidget(self.preview)
-
         control_frame = QFrame()
         control_frame.setFrameStyle(QFrame.StyledPanel)
         control_layout = QVBoxLayout(control_frame)
-
         task_row = QHBoxLayout()
         self.task_label = QLabel("任务:")
         self.task_label.setStyleSheet("font-weight: bold;")
@@ -166,7 +182,6 @@ class MainWindow(QMainWindow):
         task_row.addWidget(self.task_label)
         task_row.addWidget(self.task_input)
         control_layout.addLayout(task_row)
-
         btn_row = QHBoxLayout()
         self.start_btn = QPushButton("▶ 开始执行")
         self.start_btn.setStyleSheet(
@@ -178,39 +193,39 @@ class MainWindow(QMainWindow):
         self.vision_check.setToolTip("开启后 AI 可截图分析屏幕画面；关闭后仅使用命令模式" if lang == "zh" else
                                      "When enabled, AI can capture and analyze screen; when disabled, command-only mode")
         self.vision_check.toggled.connect(self._update_preview_placeholder)
-        self.settings_btn = QPushButton("⚙ 设置")
-        self.settings_btn.setStyleSheet("padding: 8px 16px; border: 1px solid #666; border-radius: 4px;")
-
         self.start_btn.clicked.connect(self._toggle_task)
-        self.settings_btn.clicked.connect(self._open_settings)
-
         btn_row.addWidget(self.start_btn)
         btn_row.addWidget(self.vision_check)
-        btn_row.addWidget(self.settings_btn)
         btn_row.addStretch()
         control_layout.addLayout(btn_row)
-
         left_layout.addWidget(control_frame)
-
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
-
         self.log_label = QLabel("执行日志")
         self.log_label.setStyleSheet("font-weight: bold; font-size: 14px; padding: 4px;")
         right_layout.addWidget(self.log_label)
-
         self.log_output = QTextEdit()
         self.log_output.setReadOnly(True)
         self.log_output.setStyleSheet(
             "background-color: #1e1e1e; color: #d4d4d4; font-family: 'Consolas', 'Courier New'; font-size: 12px;"
         )
         right_layout.addWidget(self.log_output)
-
         splitter.addWidget(left_panel)
         splitter.addWidget(right_panel)
         splitter.setSizes([400, 600])
-        main_layout.addWidget(splitter)
+        home_layout.addWidget(splitter)
+        self._stack.addWidget(home_page)
+
+        # --- Settings page ---
+        self._settings_page = SettingsDialog(self.config, self, embedded=True)
+        self._settings_page.saved.connect(self._on_settings_saved)
+        self._stack.addWidget(self._settings_page)
+
+        root.addWidget(self._sidebar)
+        root.addWidget(self._stack, 1)
+
+        self._sidebar.itemClicked.connect(self._on_sidebar_clicked)
 
         status_bar = self.statusBar()
         self.status_label = QLabel("就绪")
@@ -222,6 +237,17 @@ class MainWindow(QMainWindow):
         self._apply_theme(theme)
         self._apply_font(font_size)
         self._retranslate_ui(lang)
+
+    def _on_sidebar_clicked(self, item):
+        row = self._sidebar.row(item)
+        if row == 0:
+            self._stack.setCurrentIndex(0)
+        elif row == 1:
+            if self._stack.currentIndex() == 1:
+                self._sidebar.setCurrentRow(0)
+                self._stack.setCurrentIndex(0)
+            else:
+                self._stack.setCurrentIndex(1)
 
     def _apply_theme(self, theme: str):
         self._current_theme = theme
@@ -291,6 +317,34 @@ class MainWindow(QMainWindow):
             "font-weight: bold; font-size: 14px; padding: 4px;"
         )
 
+        sidebar_sel_bg = "#3c3c3c" if theme == "dark" else "#e0e0e0"
+        sidebar_sel_fg = "#00d4aa" if theme == "dark" else "#00a88a"
+        sidebar_bg = "#252525" if theme == "dark" else "#e8e8e8"
+        self._sidebar.setStyleSheet(f"""
+            QListWidget {{
+                background-color: {sidebar_bg};
+                color: #888;
+                border: none;
+                border-right: 1px solid {border};
+                padding: 12px 0;
+                outline: none;
+                font-size: 20px;
+            }}
+            QListWidget::item {{
+                padding: 10px 0;
+                text-align: center;
+            }}
+            QListWidget::item:selected {{
+                background-color: {sidebar_sel_bg};
+                color: {sidebar_sel_fg};
+                border-left: 3px solid {sidebar_sel_fg};
+            }}
+            QListWidget::item:hover {{
+                background-color: {sidebar_sel_bg};
+                color: {fg};
+            }}
+        """)
+
     def _apply_font(self, size: int):
         font = QFont("Microsoft YaHei UI", size)
         self.setFont(font)
@@ -303,7 +357,6 @@ class MainWindow(QMainWindow):
             self.task_input.setPlaceholderText("Enter a task for AI to execute...")
             self.start_btn.setText("▶ Start")
             self.vision_check.setText("👁 Vision")
-            self.settings_btn.setText("⚙ Settings")
             self.log_label.setText("Execution Log")
             self.status_label.setText("Ready")
         else:
@@ -313,7 +366,6 @@ class MainWindow(QMainWindow):
             self.task_input.setPlaceholderText("在此输入你想让 AI 执行的任务...")
             self.start_btn.setText("▶ 开始执行")
             self.vision_check.setText("👁 屏幕识别")
-            self.settings_btn.setText("⚙ 设置")
             self.log_label.setText("执行日志")
             self.status_label.setText("就绪")
         if hasattr(self, "tray"):
@@ -695,22 +747,32 @@ class MainWindow(QMainWindow):
         old_lang = self.config.get("language")
         old_theme = self.config.get("theme")
         dialog = SettingsDialog(self.config, self)
-        if dialog.exec_():
-            self.config = dialog.get_config()
-            new_lang = self.config.get("language")
-            new_theme = self.config.get("theme")
-            if old_lang != new_lang:
-                self.agent = None
-                msg = "Language changed, session will restart" if new_lang == "en" else "语言已更改，会话将重新开始"
-                self._log(msg, "info")
-            if old_theme != new_theme:
-                self._apply_theme(new_theme)
-            self._apply_font(self.config.get("font_size", 9))
-            self._retranslate_ui(new_lang)
-            hotkey_stop()
-            self._init_hotkeys()
-            self.float_window.config = self.config
-            self.float_window._retranslate()
+        result = dialog.exec_()
+        self._sidebar.setCurrentRow(0)
+        if result:
+            self._apply_settings(dialog.get_config(), old_lang, old_theme)
+
+    def _on_settings_saved(self, new_config):
+        old_lang = self.config.get("language")
+        old_theme = self.config.get("theme")
+        self._apply_settings(new_config, old_lang, old_theme)
+
+    def _apply_settings(self, new_config, old_lang, old_theme):
+        self.config = new_config
+        new_lang = self.config.get("language")
+        new_theme = self.config.get("theme")
+        if old_lang != new_lang:
+            self.agent = None
+            msg = "Language changed, session will restart" if new_lang == "en" else "语言已更改，会话将重新开始"
+            self._log(msg, "info")
+        if old_theme != new_theme:
+            self._apply_theme(new_theme)
+        self._apply_font(self.config.get("font_size", 9))
+        self._retranslate_ui(new_lang)
+        hotkey_stop()
+        self._init_hotkeys()
+        self.float_window.config = self.config
+        self.float_window._retranslate()
 
     def _reset_session(self):
         self.agent = None
