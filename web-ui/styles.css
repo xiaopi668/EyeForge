@@ -237,6 +237,10 @@ body[data-theme="light"] .sidebar {
   gap: 16px;
 }
 
+.is-hidden {
+  display: none !important;
+}
+
 .panel {
   padding: 20px;
 }
@@ -249,6 +253,17 @@ body[data-theme="light"] .sidebar {
 .connection-panel,
 .settings-panel {
   grid-column: 2;
+}
+
+.settings-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-grid p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.6;
 }
 
 .channels-panel,
@@ -265,6 +280,34 @@ body[data-theme="light"] .sidebar {
   padding: 0;
   overflow: hidden;
   background: var(--bg-elevated);
+}
+
+.group-empty {
+  grid-column: 1 / -1;
+  min-height: 560px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 18px;
+  padding: 44px;
+  text-align: center;
+}
+
+.group-empty h3 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.group-empty p {
+  margin: 0;
+  max-width: 560px;
+  color: var(--text-soft);
+  line-height: 1.7;
+}
+
+.group-empty .field-inline {
+  width: min(420px, 100%);
+  text-align: left;
 }
 
 .group-chat {
@@ -473,6 +516,35 @@ body[data-theme="light"] .sidebar {
 .member-list {
   display: grid;
   gap: 8px;
+}
+
+.room-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.room-button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  text-align: left;
+  background: var(--bg-panel-strong);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.room-button.is-active,
+.room-button:hover {
+  border-color: var(--accent-strong);
+}
+
+.room-button span {
+  color: var(--text-soft);
+  font-size: 12px;
 }
 
 .member-row {

@@ -1,9 +1,18 @@
+const storageKeys = {
+  theme: "eyeforge-web-theme",
+  language: "eyeforge-web-language",
+  groups: "eyeforge-ai-groups",
+  activeGroup: "eyeforge-active-ai-group",
+};
+
 const state = {
   ws: null,
   connected: false,
   authenticated: false,
-  theme: localStorage.getItem("eyeforge-web-theme") || "dark",
-  language: localStorage.getItem("eyeforge-web-language") || "zh",
+  theme: localStorage.getItem(storageKeys.theme) || "dark",
+  language: localStorage.getItem(storageKeys.language) || "zh",
+  groups: loadGroups(),
+  activeGroupId: localStorage.getItem(storageKeys.activeGroup) || "",
 };
 
 const dict = {
@@ -12,6 +21,7 @@ const dict = {
     sidebar_gateway: "Gateway :9178",
     nav_dashboard: "Dashboard",
     nav_ai_groups: "AI Groups",
+    nav_settings: "Settings",
     nav_channels: "Channels",
     nav_voice: "Voice",
     nav_logs: "Logs",
@@ -38,23 +48,13 @@ const dict = {
     result_empty_title: "No result yet",
     result_empty_body: "Run a Rust gateway task or use voice transcription below.",
     screenshot_empty: "Screenshot output will appear here when a task returns image data.",
-    ai_group_name: "Dragon Group",
-    ai_group_desc: "Coordinate daily work across specialized agents",
-    role_coordinator: "Coordinator",
-    role_script: "Script Specialist",
-    role_owner: "Owner",
-    role_code: "Code Implementer",
-    msg_kimi_1: "I have the archive, collection, and research-report duties noted. Role memory is ready.",
-    msg_script: "Welcome to the AI group. Tasks can be routed into the right member by role.",
-    msg_owner: "This room coordinates daily work. Drop a file, describe a goal, or mention a member to collaborate.",
-    msg_codex: "I handle implementation, debugging, and verification when the project needs changes.",
-    ai_group_placeholder: "Mention multiple Claws to start collaboration",
-    invite_member: "Invite Member",
-    add_claw: "Add Claw",
-    edit_group: "Edit Group",
-    people_title: "People",
-    claw_title: "Claw",
-    available: "Available",
+    settings_title: "Settings",
+    settings_local: "Local",
+    settings_webui_toggle: "Enable Web UI gateway",
+    settings_vision_toggle: "Enable vision hint",
+    settings_skill_toggle: "Enable Skill system",
+    settings_hint:
+      "These browser switches affect the Web UI immediately. Persistent backend settings are saved from the desktop app.",
     channels_title: "Channel Matrix",
     refresh_button: "Refresh",
     voice_title: "Voice Console",
@@ -102,12 +102,40 @@ const dict = {
     task: "Task",
     voice: "Voice",
     bootTitle: "Boot",
+    ai_empty_title: "No AI group yet",
+    ai_empty_body: "Create a group first. EyeForge will not create Dragon Group or any other default room.",
+    ai_group_name_label: "Group name",
+    ai_group_name_placeholder: "Project room",
+    create_group: "Create Group",
+    group_list_title: "Groups",
+    group_settings: "Group Settings",
+    group_desc: "Coordinate daily work across specialized agents",
+    no_group_members: "No members yet",
+    no_group_agents: "No AI agents yet",
+    add_member: "Add Member",
+    add_ai: "Add AI",
+    edit_group: "Edit Group",
+    people_title: "People",
+    ai_title: "AI",
+    member_name_prompt: "Member name",
+    member_role_prompt: "Member role",
+    ai_name_prompt: "AI name",
+    ai_role_prompt: "AI role",
+    group_name_prompt: "Group name",
+    group_created: "Group created",
+    member_added: "Member added",
+    ai_added: "AI added",
+    group_updated: "Group updated",
+    ai_placeholder: "Mention a member or type a goal",
+    system_member: "Group Assistant",
+    system_message: "The group is ready. Add members or AI agents, then route tasks by role here.",
   },
   zh: {
     sidebar_subtitle: "Rust 网关控制台",
     sidebar_gateway: "网关 :9178",
     nav_dashboard: "控制台",
     nav_ai_groups: "AI 群组",
+    nav_settings: "设置",
     nav_channels: "通道",
     nav_voice: "语音",
     nav_logs: "日志",
@@ -133,23 +161,12 @@ const dict = {
     result_empty_title: "还没有结果",
     result_empty_body: "运行一个 Rust 网关任务，或使用下方语音转写。",
     screenshot_empty: "当任务返回图像数据时，截图预览会显示在这里。",
-    ai_group_name: "龙虾群",
-    ai_group_desc: "协助负责人完成日常任务",
-    role_coordinator: "协调者",
-    role_script: "脚本专家",
-    role_owner: "群主",
-    role_code: "代码执行",
-    msg_kimi_1: "收到，资料归档、信息搜集、研究报告这几块我记下了。角色定位存好，随时待命。",
-    msg_script: "欢迎来到 AI 群组。你可以先熟悉沟通规则，后续任务会按角色进入对应成员。",
-    msg_owner: "这里专门协助日常任务。可以上传文件、丢一个目标，或者直接 @ 某个成员开始协作。",
-    msg_codex: "我负责实现、调试和验证。需要改项目时可以直接分配给我。",
-    ai_group_placeholder: "@多个 Claw，马上开始协作",
-    invite_member: "邀请成员",
-    add_claw: "添加 Claw",
-    edit_group: "编辑群信息",
-    people_title: "人类",
-    claw_title: "Claw",
-    available: "可聊天",
+    settings_title: "设置",
+    settings_local: "本地",
+    settings_webui_toggle: "启用 Web UI 网关",
+    settings_vision_toggle: "启用视觉提示",
+    settings_skill_toggle: "启用 Skill 系统",
+    settings_hint: "这些浏览器开关会立即影响 Web UI；需要持久保存的后端设置请在桌面端保存。",
     channels_title: "通道矩阵",
     refresh_button: "刷新",
     voice_title: "语音控制台",
@@ -196,6 +213,33 @@ const dict = {
     task: "任务",
     voice: "语音",
     bootTitle: "启动",
+    ai_empty_title: "还没有 AI 群组",
+    ai_empty_body: "先创建一个自己的群聊。EyeForge 不会预置“龙虾群”或其他默认群。",
+    ai_group_name_label: "群聊名称",
+    ai_group_name_placeholder: "项目协作群",
+    create_group: "创建群聊",
+    group_list_title: "群聊",
+    group_settings: "群聊设置",
+    group_desc: "协助多个专长代理完成日常任务",
+    no_group_members: "还没有成员",
+    no_group_agents: "还没有 AI 成员",
+    add_member: "添加成员",
+    add_ai: "添加 AI",
+    edit_group: "编辑群信息",
+    people_title: "成员",
+    ai_title: "AI",
+    member_name_prompt: "成员名称",
+    member_role_prompt: "成员角色",
+    ai_name_prompt: "AI 名称",
+    ai_role_prompt: "AI 角色",
+    group_name_prompt: "群聊名称",
+    group_created: "群聊已创建",
+    member_added: "成员已添加",
+    ai_added: "AI 已添加",
+    group_updated: "群聊已更新",
+    ai_placeholder: "@成员 或输入任务目标",
+    system_member: "群组助手",
+    system_message: "群聊已创建。添加成员或 AI 后，可以在这里按角色分配任务。",
   },
 };
 
@@ -212,6 +256,9 @@ const els = {
   connectionBadge: document.getElementById("connection-badge"),
   connectionDetail: document.getElementById("connection-detail"),
   visionToggle: document.getElementById("vision-toggle"),
+  settingsVisionToggle: document.getElementById("settings-vision-toggle"),
+  webuiToggle: document.getElementById("webui-toggle"),
+  skillToggle: document.getElementById("settings-skill-toggle"),
   visionBadge: document.getElementById("vision-badge"),
   themeToggle: document.getElementById("theme-toggle"),
   languageToggle: document.getElementById("language-toggle"),
@@ -225,13 +272,30 @@ const els = {
   voiceSeconds: document.getElementById("voice-seconds"),
   voiceRecord: document.getElementById("voice-record"),
   voiceResult: document.getElementById("voice-result"),
+  aiGroups: document.getElementById("ai-groups"),
   navItems: [...document.querySelectorAll(".nav-item")],
-  i18nNodes: [...document.querySelectorAll("[data-i18n]")],
-  i18nPlaceholders: [...document.querySelectorAll("[data-i18n-placeholder]")],
 };
 
 function t(key) {
   return dict[state.language][key] ?? dict.en[key] ?? key;
+}
+
+function loadGroups() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(storageKeys.groups) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveGroups() {
+  localStorage.setItem(storageKeys.groups, JSON.stringify(state.groups));
+  localStorage.setItem(storageKeys.activeGroup, state.activeGroupId || "");
+}
+
+function activeGroup() {
+  return state.groups.find((group) => group.id === state.activeGroupId) || state.groups[0] || null;
 }
 
 function gatewayWsUrl() {
@@ -242,14 +306,14 @@ function gatewayWsUrl() {
 function setTheme(theme) {
   state.theme = theme;
   els.body.dataset.theme = theme;
-  localStorage.setItem("eyeforge-web-theme", theme);
+  localStorage.setItem(storageKeys.theme, theme);
 }
 
 function applyTranslations() {
-  for (const node of els.i18nNodes) {
+  for (const node of document.querySelectorAll("[data-i18n]")) {
     node.textContent = t(node.dataset.i18n);
   }
-  for (const node of els.i18nPlaceholders) {
+  for (const node of document.querySelectorAll("[data-i18n-placeholder]")) {
     node.placeholder = t(node.dataset.i18nPlaceholder);
   }
   els.languageToggle.textContent = state.language === "zh" ? "EN" : "中文";
@@ -260,7 +324,8 @@ function applyTranslations() {
 
 function setLanguage(language) {
   state.language = language;
-  localStorage.setItem("eyeforge-web-language", language);
+  localStorage.setItem(storageKeys.language, language);
+  renderAiGroups();
   applyTranslations();
 }
 
@@ -275,7 +340,7 @@ function logLine(title, detail, tone = "info") {
   const line = document.createElement("div");
   line.className = "log-line";
   line.innerHTML = `
-    <small>${new Date().toLocaleTimeString()} · ${escapeHtml(title)}</small>
+    <small>${new Date().toLocaleTimeString()} | ${escapeHtml(title)}</small>
     <code>${escapeHtml(detail)}</code>
   `;
   if (tone === "error") {
@@ -306,7 +371,11 @@ function updateConnectionUi() {
 }
 
 function setVisionBadge() {
-  els.visionBadge.textContent = els.visionToggle.checked ? t("vision") : t("command");
+  const enabled = els.visionToggle.checked;
+  els.visionBadge.textContent = enabled ? t("vision") : t("command");
+  if (els.settingsVisionToggle) {
+    els.settingsVisionToggle.checked = enabled;
+  }
 }
 
 function setResultCard(message, detail) {
@@ -418,9 +487,10 @@ async function loadChannels() {
     const cards = (payload.channels || []).map(
       (channel) => `
         <article class="channel-card">
-          <span>${escapeHtml(channel.kind || "channel")}</span>
-          <strong>${escapeHtml(channel.name || "Channel")}</strong>
-          <small>${escapeHtml(channel.enabled ? t("online") : t("offline"))}</small>
+          <div class="channel-top">
+            <strong>${escapeHtml(channel.name || "Channel")}</strong>
+            <span class="badge badge-${escapeHtml(channel.status || "disabled")}">${escapeHtml(channel.status || "")}</span>
+          </div>
           <p>${escapeHtml(channel.detail || "")}</p>
         </article>
       `,
@@ -439,7 +509,7 @@ async function loadVoiceDevices() {
     const devices = payload.devices || [];
     els.deviceList.innerHTML =
       devices
-        .map((device) => `<li>${escapeHtml(device.name)}${device.default ? ` · ${t("defaultDevice")}` : ""}</li>`)
+        .map((device) => `<li>${escapeHtml(device.name)}${device.default ? ` | ${t("defaultDevice")}` : ""}</li>`)
         .join("") || `<li>${t("noDevices")}</li>`;
   } catch (error) {
     els.deviceList.innerHTML = `<li>${escapeHtml(error)}</li>`;
@@ -456,8 +526,8 @@ async function transcribeVoice() {
       body: JSON.stringify({ seconds }),
     });
     const payload = await response.json();
-    if (!payload.ok) {
-      throw new Error(payload.error || "Voice transcription failed");
+    if (payload.error) {
+      throw new Error(payload.error);
     }
     setVoiceResult(payload.result.text || t("noVoice"), `sample rate ${payload.result.sample_rate}`);
     logLine(t("voice"), JSON.stringify(payload.result, null, 2));
@@ -468,14 +538,200 @@ async function transcribeVoice() {
 }
 
 function bindNavigation() {
+  const views = {
+    dashboard: ["dashboard", "metrics", "task-panel", "result-panel"],
+    "ai-groups": ["ai-groups"],
+    settings: ["settings"],
+    channels: ["channels"],
+    voice: ["voice"],
+    logs: ["logs"],
+  };
+  const allViewKeys = [...new Set(Object.values(views).flat())];
+  const resolveView = (key) => {
+    if (key === "metrics") return document.querySelector(".metrics");
+    if (key === "task-panel") return document.querySelector(".task-panel");
+    if (key === "result-panel") return document.querySelector(".result-panel");
+    return document.getElementById(key);
+  };
+  const showSection = (section) => {
+    const active = new Set(views[section] || views.dashboard);
+    for (const key of allViewKeys) {
+      resolveView(key)?.classList.toggle("is-hidden", !active.has(key));
+    }
+    els.navItems.forEach((entry) => {
+      entry.classList.toggle("is-active", entry.dataset.section === section);
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   for (const item of els.navItems) {
-    item.addEventListener("click", () => {
-      els.navItems.forEach((entry) => entry.classList.remove("is-active"));
-      item.classList.add("is-active");
-      const target = document.getElementById(item.dataset.section);
-      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    item.addEventListener("click", () => showSection(item.dataset.section || "dashboard"));
+  }
+
+  showSection("dashboard");
+}
+
+function renderAiGroups() {
+  const group = activeGroup();
+  if (!group) {
+    els.aiGroups.innerHTML = `
+      <div class="group-empty">
+        <div class="avatar-stack"><span>AI</span><span>+</span></div>
+        <h3>${escapeHtml(t("ai_empty_title"))}</h3>
+        <p>${escapeHtml(t("ai_empty_body"))}</p>
+        <label class="field-inline">
+          <span>${escapeHtml(t("ai_group_name_label"))}</span>
+          <input id="new-group-name" type="text" placeholder="${escapeHtml(t("ai_group_name_placeholder"))}" />
+        </label>
+        <button id="create-group" class="primary-button" type="button">${escapeHtml(t("create_group"))}</button>
+      </div>
+    `;
+    document.getElementById("create-group")?.addEventListener("click", createGroupFromInput);
+    return;
+  }
+
+  state.activeGroupId = group.id;
+  saveGroups();
+  const groupButtons = state.groups
+    .map(
+      (item) => `
+        <button class="room-button ${item.id === group.id ? "is-active" : ""}" data-group-id="${escapeHtml(item.id)}">
+          <strong>${escapeHtml(item.name)}</strong>
+          <span>${item.people.length + item.agents.length} ${escapeHtml(t("people_title"))}</span>
+        </button>
+      `,
+    )
+    .join("");
+  const people = group.people
+    .map((member) => memberRow(member, "avatar-human"))
+    .join("") || `<div class="empty-state">${escapeHtml(t("no_group_members"))}</div>`;
+  const agents = group.agents
+    .map((member) => memberRow(member, "avatar-code"))
+    .join("") || `<div class="empty-state">${escapeHtml(t("no_group_agents"))}</div>`;
+
+  els.aiGroups.innerHTML = `
+    <div class="group-chat">
+      <div class="group-chat-head">
+        <div>
+          <h3>${escapeHtml(group.name)}</h3>
+          <p>${escapeHtml(t("group_desc"))}</p>
+        </div>
+        <div class="group-tools">
+          <button class="icon-button" id="new-group" type="button">+</button>
+          <button class="icon-button" id="edit-group" type="button">E</button>
+        </div>
+      </div>
+      <div class="message-stream">
+        <article class="chat-message">
+          <div class="avatar">AI</div>
+          <div>
+            <div class="message-meta"><strong>${escapeHtml(t("system_member"))}</strong><span>${escapeHtml(t("group_settings"))}</span></div>
+            <p>${escapeHtml(t("system_message"))}</p>
+          </div>
+        </article>
+      </div>
+      <div class="group-composer">
+        <button class="icon-button" id="composer-add-ai" type="button">+</button>
+        <input placeholder="${escapeHtml(t("ai_placeholder"))}" />
+      </div>
+    </div>
+    <aside class="group-settings">
+      <div class="group-cover">
+        <div class="avatar-stack"><span>${escapeHtml(group.name.slice(0, 1).toUpperCase())}</span><span>AI</span></div>
+        <h3>${escapeHtml(group.name)}</h3>
+        <p>${escapeHtml(t("group_desc"))}</p>
+      </div>
+      <div class="quick-actions">
+        <button id="add-member" type="button"><strong>people</strong><span>${escapeHtml(t("add_member"))}</span></button>
+        <button id="add-ai" type="button"><strong>+</strong><span>${escapeHtml(t("add_ai"))}</span></button>
+        <button id="edit-group-side" type="button"><strong>edit</strong><span>${escapeHtml(t("edit_group"))}</span></button>
+      </div>
+      <h4>${escapeHtml(t("group_list_title"))}</h4>
+      <div class="room-list">${groupButtons}</div>
+      <h4>${escapeHtml(t("people_title"))}</h4>
+      <div class="member-list">${people}</div>
+      <h4>${escapeHtml(t("ai_title"))}</h4>
+      <div class="member-list">${agents}</div>
+    </aside>
+  `;
+
+  for (const button of els.aiGroups.querySelectorAll(".room-button")) {
+    button.addEventListener("click", () => {
+      state.activeGroupId = button.dataset.groupId;
+      renderAiGroups();
     });
   }
+  document.getElementById("new-group")?.addEventListener("click", createGroupPrompt);
+  document.getElementById("add-member")?.addEventListener("click", addMemberPrompt);
+  document.getElementById("add-ai")?.addEventListener("click", addAiPrompt);
+  document.getElementById("composer-add-ai")?.addEventListener("click", addAiPrompt);
+  document.getElementById("edit-group")?.addEventListener("click", editGroupPrompt);
+  document.getElementById("edit-group-side")?.addEventListener("click", editGroupPrompt);
+}
+
+function memberRow(member, avatarClass) {
+  return `
+    <div class="member-row">
+      <span class="avatar small ${avatarClass}">${escapeHtml(member.name.slice(0, 1).toUpperCase())}</span>
+      <strong>${escapeHtml(member.name)}</strong>
+      <em>${escapeHtml(member.role)}</em>
+    </div>
+  `;
+}
+
+function createGroupFromInput() {
+  const input = document.getElementById("new-group-name");
+  createGroup((input?.value || "").trim());
+}
+
+function createGroupPrompt() {
+  createGroup(window.prompt(t("group_name_prompt"), "") || "");
+}
+
+function createGroup(name) {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  const group = { id: crypto.randomUUID(), name: trimmed, people: [], agents: [] };
+  state.groups.push(group);
+  state.activeGroupId = group.id;
+  saveGroups();
+  renderAiGroups();
+  logLine(t("group_created"), trimmed);
+}
+
+function editGroupPrompt() {
+  const group = activeGroup();
+  if (!group) return;
+  const name = (window.prompt(t("group_name_prompt"), group.name) || "").trim();
+  if (!name) return;
+  group.name = name;
+  saveGroups();
+  renderAiGroups();
+  logLine(t("group_updated"), name);
+}
+
+function addMemberPrompt() {
+  const group = activeGroup();
+  if (!group) return;
+  const name = (window.prompt(t("member_name_prompt"), "") || "").trim();
+  if (!name) return;
+  const role = (window.prompt(t("member_role_prompt"), "Member") || "Member").trim();
+  group.people.push({ name, role });
+  saveGroups();
+  renderAiGroups();
+  logLine(t("member_added"), `${name} | ${role}`);
+}
+
+function addAiPrompt() {
+  const group = activeGroup();
+  if (!group) return;
+  const name = (window.prompt(t("ai_name_prompt"), "Codex") || "").trim();
+  if (!name) return;
+  const role = (window.prompt(t("ai_role_prompt"), "Implementer") || "AI").trim();
+  group.agents.push({ name, role });
+  saveGroups();
+  renderAiGroups();
+  logLine(t("ai_added"), `${name} | ${role}`);
 }
 
 els.connectBtn.addEventListener("click", connectSocket);
@@ -483,6 +739,16 @@ els.disconnectBtn.addEventListener("click", () => disconnectSocket());
 els.sendTask.addEventListener("click", sendTask);
 els.clearLog.addEventListener("click", () => (els.log.innerHTML = ""));
 els.visionToggle.addEventListener("change", setVisionBadge);
+els.settingsVisionToggle?.addEventListener("change", () => {
+  els.visionToggle.checked = els.settingsVisionToggle.checked;
+  setVisionBadge();
+});
+els.webuiToggle?.addEventListener("change", () => {
+  logLine(t("settings_title"), `${t("settings_webui_toggle")}: ${els.webuiToggle.checked ? t("online") : t("offline")}`);
+});
+els.skillToggle?.addEventListener("change", () => {
+  logLine(t("settings_title"), `${t("settings_skill_toggle")}: ${els.skillToggle.checked ? t("online") : t("offline")}`);
+});
 els.themeToggle.addEventListener("click", () => setTheme(state.theme === "dark" ? "light" : "dark"));
 els.languageToggle.addEventListener("click", () => setLanguage(state.language === "zh" ? "en" : "zh"));
 els.refreshChannels.addEventListener("click", loadChannels);
@@ -491,6 +757,7 @@ els.voiceRecord.addEventListener("click", transcribeVoice);
 
 bindNavigation();
 setTheme(state.theme);
+renderAiGroups();
 setLanguage(state.language);
 setScreenshot("");
 setResultCard(t("result_empty_title"), t("result_empty_body"));

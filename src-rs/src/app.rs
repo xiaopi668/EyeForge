@@ -3,7 +3,9 @@ use iced::widget::{
     button, checkbox, column, container, horizontal_rule, image, pick_list, row, scrollable, text,
     text_input,
 };
-use iced::{Alignment, Background, Border, Color, ContentFit, Element, Fill, Length, Task, Theme};
+use iced::{time, window, Alignment, Background, Border, Color, ContentFit, Element, Fill, Length};
+use iced::{Subscription, Task, Theme};
+use std::time::Duration;
 
 use crate::config::{Config, EditableConfig};
 use crate::runtime::{self, NativeOutcome};
@@ -241,6 +243,8 @@ pub enum TextField {
     QqBotAppId,
     QqBotToken,
     SkillsEnabled,
+    AiGroupName,
+    AiGroupPeople,
     AiGroupStrategy,
     AiGroupOpenclawMembers,
     AiGroupAstrbotMembers,
@@ -248,6 +252,7 @@ pub enum TextField {
     AiGroupOpencodeMembers,
     AiGroupCodexMembers,
     AiGroupClaudeCodeMembers,
+    SkillImportPath,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -290,9 +295,18 @@ pub enum Message {
     WechatQrLoginFinished(Result<QrLoginResult, String>),
     TextChanged(TextField, String),
     BoolChanged(BoolField, bool),
+    ImportSkill,
+    SkillImported(Result<crate::skills::ImportedSkill, String>),
+    CreateAiGroup,
+    AddGroupMember,
+    AddGroupAi,
     SaveSettings,
     StartTask,
     BackendFinished(Result<NativeOutcome, String>),
+    WindowDiscovered(Option<window::Id>),
+    WindowCloseRequested(window::Id),
+    TrayTick,
+    ShowWindowById(Option<window::Id>),
 }
 
 pub struct EyeForge {
@@ -304,11 +318,13 @@ pub struct EyeForge {
     task_input: String,
     status_text: String,
     latest_result: Option<String>,
+    skill_import_path: String,
     logs: Vec<LogEntry>,
     task_running: bool,
     wechat_login_running: bool,
     wechat_qr_image: Option<image::Handle>,
     wechat_qr_status: Option<String>,
+    main_window_id: Option<window::Id>,
 }
 
 impl Default for EyeForge {
@@ -330,11 +346,13 @@ impl Default for EyeForge {
                 "Ready".into()
             },
             latest_result: None,
+            skill_import_path: String::new(),
             logs: Vec::new(),
             task_running: false,
             wechat_login_running: false,
             wechat_qr_image: None,
             wechat_qr_status: None,
+            main_window_id: None,
         }
     }
 }
@@ -360,11 +378,13 @@ impl EyeForge {
                 "Ready".into()
             },
             latest_result: None,
+            skill_import_path: String::new(),
             logs: Vec::new(),
             task_running: false,
             wechat_login_running: false,
             wechat_qr_image: None,
             wechat_qr_status: None,
+            main_window_id: None,
         };
 
         let gateway_status = server::restart(&app.config);
@@ -423,7 +443,7 @@ impl EyeForge {
             },
         );
 
-        (app, Task::none())
+        (app, window::get_latest().map(Message::WindowDiscovered))
     }
 
     pub fn title(&self) -> String {
@@ -438,8 +458,54 @@ impl EyeForge {
         self.theme.clone()
     }
 
+    pub fn subscription(&self) -> Subscription<Message> {
+        Subscription::batch([
+            window::close_requests().map(Message::WindowCloseRequested),
+            time::every(Duration::from_millis(250)).map(|_| Message::TrayTick),
+        ])
+    }
+
+    fn restore_window(id: window::Id) -> Task<Message> {
+        Task::batch([
+            window::change_mode(id, window::Mode::Windowed),
+            window::minimize(id, false),
+            window::gain_focus(id),
+        ])
+    }
+
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::WindowDiscovered(id) => {
+                self.main_window_id = id;
+            }
+            Message::WindowCloseRequested(id) => {
+                self.main_window_id = Some(id);
+                self.status_text = if self.language().is_zh() {
+                    "已隐藏到系统托盘，右键托盘图标可显示或退出".into()
+                } else {
+                    "Hidden to the system tray. Right-click the tray icon to show or exit.".into()
+                };
+                return window::change_mode(id, window::Mode::Hidden);
+            }
+            Message::TrayTick => match crate::tray::next_command() {
+                Some(crate::tray::TrayCommand::Show) => {
+                    if let Some(id) = self.main_window_id {
+                        return Self::restore_window(id);
+                    }
+
+                    return window::get_latest().map(Message::ShowWindowById);
+                }
+                Some(crate::tray::TrayCommand::Exit) => {
+                    return iced::exit();
+                }
+                None => {}
+            },
+            Message::ShowWindowById(id) => {
+                self.main_window_id = id;
+                if let Some(id) = id {
+                    return Self::restore_window(id);
+                }
+            }
             Message::SidebarClick(page) => {
                 self.current_page = if page == Page::Settings && self.current_page == Page::Settings
                 {
@@ -585,6 +651,89 @@ impl EyeForge {
             }
             Message::TextChanged(field, value) => self.update_text_field(field, value),
             Message::BoolChanged(field, value) => self.update_bool_field(field, value),
+            Message::ImportSkill => {
+                let source = self.skill_import_path.clone();
+                self.status_text = if self.language().is_zh() {
+                    "正在导入 Skill...".into()
+                } else {
+                    "Importing Skill...".into()
+                };
+                return Task::perform(
+                    async move { crate::skills::import_skill(&source) },
+                    Message::SkillImported,
+                );
+            }
+            Message::SkillImported(result) => match result {
+                Ok(skill) => {
+                    let mut enabled = self
+                        .settings
+                        .skills_enabled
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|item| !item.is_empty())
+                        .map(str::to_string)
+                        .collect::<Vec<_>>();
+                    if !enabled.iter().any(|item| item == &skill.name) {
+                        enabled.push(skill.name.clone());
+                    }
+                    self.settings.skills_enabled = enabled.join(", ");
+                    self.status_text = if self.language().is_zh() {
+                        format!("Skill 已导入: {}", skill.name)
+                    } else {
+                        format!("Skill imported: {}", skill.name)
+                    };
+                    self.push_log(
+                        LogKind::Success,
+                        self.t("Skill 导入", "Skill Import"),
+                        format!("{} -> {}", skill.name, skill.path.display()),
+                    );
+                }
+                Err(error) => {
+                    self.status_text = error.clone();
+                    self.push_log(LogKind::Error, self.t("Skill 导入", "Skill Import"), error);
+                }
+            },
+            Message::CreateAiGroup => {
+                if self.settings.ai_group_name.trim().is_empty() {
+                    self.settings.ai_group_name = if self.language().is_zh() {
+                        "我的 AI 群组".into()
+                    } else {
+                        "My AI Group".into()
+                    };
+                }
+                self.settings.ai_groups_enabled = true;
+                self.status_text = if self.language().is_zh() {
+                    format!("已创建群聊：{}", self.settings.ai_group_name)
+                } else {
+                    format!("Group created: {}", self.settings.ai_group_name)
+                };
+            }
+            Message::AddGroupMember => {
+                let member_line = if self.language().is_zh() {
+                    "成员 | 负责人 | 可聊天"
+                } else {
+                    "Member | Owner | Available"
+                };
+                append_unique_line(&mut self.settings.ai_group_people, member_line);
+                self.status_text = self
+                    .t(
+                        "已添加成员，请修改名称后保存",
+                        "Member added. Rename it and save.",
+                    )
+                    .to_string();
+            }
+            Message::AddGroupAi => {
+                append_unique_line(
+                    &mut self.settings.ai_group_codex_members,
+                    "Codex | implementer | http://127.0.0.1:9102",
+                );
+                self.status_text = self
+                    .t(
+                        "已添加 AI 成员，请修改连接地址后保存",
+                        "AI member added. Update its endpoint and save.",
+                    )
+                    .to_string();
+            }
             Message::SaveSettings => {
                 self.config = self.config.apply_editable(&self.settings);
                 self.config.save();
@@ -1273,7 +1422,7 @@ impl EyeForge {
             channel_block(
                 self.t("WebSocket Gateway", "WebSocket Gateway"),
                 vec![
-                    checkbox(self.t("启用", "Enabled"), self.settings.ws_enabled)
+                    checkbox(self.t("启用 Web UI / WebSocket 网关", "Enable Web UI / WebSocket Gateway"), self.settings.ws_enabled)
                         .on_toggle(|value| Message::BoolChanged(BoolField::WsEnabled, value))
                         .into(),
                     field_row(
@@ -1444,9 +1593,38 @@ impl EyeForge {
                     plain_input("browser, shell", &self.settings.skills_enabled, TextField::SkillsEnabled),
                 ),
                 helper_text(self.t(
-                    "保留了原先 Skill 功能的配置入口。后续可继续接技能目录扫描、导入和开关。",
-                    "This keeps the original Skill feature entry point. Directory scanning, import, and per-skill toggles can be connected next.",
+                    "支持导入 OpenClaw / Codex 兼容 Skill 目录或 ZIP，导入后会复制到项目根目录 skills/ 并自动加入启用列表。",
+                    "Import an OpenClaw / Codex compatible Skill directory or ZIP. It will be copied into skills/ and enabled automatically.",
                 ), self.theme()),
+                channel_block(
+                    self.t("导入 Skill", "Import Skill"),
+                    vec![
+                        field_row(
+                            self.t("路径", "Path"),
+                            plain_input(
+                                "C:\\path\\to\\skill-or-skill.zip",
+                                &self.skill_import_path,
+                                TextField::SkillImportPath,
+                            ),
+                        ),
+                        row![
+                            button(text(self.t("导入", "Import")).size(14))
+                                .padding([10, 16])
+                                .style(accent_button_style)
+                                .on_press(Message::ImportSkill),
+                            helper_text(
+                                self.t(
+                                    "目录内需要包含 SKILL.md；ZIP 会自动解包并查找 SKILL.md。",
+                                    "The directory must contain SKILL.md. ZIP files are unpacked and scanned for SKILL.md.",
+                                ),
+                                self.theme(),
+                            ),
+                        ]
+                        .spacing(12)
+                        .align_y(Alignment::Center)
+                        .into(),
+                    ],
+                ),
             ]),
         ]
         .spacing(14)
@@ -1461,8 +1639,447 @@ impl EyeForge {
             .into()
     }
 
+    #[allow(unreachable_code)]
     fn ai_group_console(&self) -> Element<'_, Message> {
         let member_count = self.ai_group_member_count();
+        let group_name = self.settings.ai_group_name.trim();
+
+        if group_name.is_empty() {
+            return container(
+                column![
+                    text(self.t("还没有群聊", "No group yet"))
+                        .size(28)
+                        .color(self.primary_text_color()),
+                    text(self.t(
+                        "AI 群组不会预置“龙虾群”。先创建一个自己的群聊，再添加成员和 AI。",
+                        "EyeForge does not create a default group. Create your own group first, then add members and AI agents.",
+                    ))
+                    .size(15)
+                    .color(self.secondary_text_color()),
+                    field_row(
+                        self.t("群聊名称", "Group Name"),
+                        plain_input(
+                            self.t("例如：项目协作群", "Example: Project Room"),
+                            &self.settings.ai_group_name,
+                            TextField::AiGroupName,
+                        ),
+                    ),
+                    row![
+                        button(text(self.t("创建群聊", "Create Group")).size(15))
+                            .padding([12, 18])
+                            .style(accent_button_style)
+                            .on_press(Message::CreateAiGroup),
+                        button(text(self.t("添加 AI 成员", "Add AI")).size(15))
+                            .padding([12, 18])
+                            .style(subtle_button_style)
+                            .on_press(Message::AddGroupAi),
+                    ]
+                    .spacing(10),
+                ]
+                .spacing(18),
+            )
+            .padding(28)
+            .style(panel_style)
+            .width(Fill)
+            .into();
+        }
+
+        let mut people_list = column![].spacing(10);
+        for (name, role, status) in parse_member_lines(&self.settings.ai_group_people, "Member") {
+            people_list = people_list.push(member_card(name, role, status, self.theme()));
+        }
+        if self.settings.ai_group_people.trim().is_empty() {
+            people_list = people_list.push(empty_member_card(
+                self.t("还没有成员", "No members"),
+                self.t(
+                    "点击添加成员后再改名保存",
+                    "Click Add Member, then rename and save",
+                ),
+                self.theme(),
+            ));
+        }
+
+        let agents = self.ai_group_agent_members();
+        let mut ai_list = column![].spacing(10);
+        for (name, role, status) in agents.iter().cloned() {
+            ai_list = ai_list.push(member_card(name, role, status, self.theme()));
+        }
+        if agents.is_empty() {
+            ai_list = ai_list.push(empty_member_card(
+                self.t("还没有 AI", "No AI agents"),
+                self.t(
+                    "点击添加 AI 后配置连接地址",
+                    "Click Add AI and configure its endpoint",
+                ),
+                self.theme(),
+            ));
+        }
+
+        let chat_panel = container(
+            column![
+                row![
+                    column![
+                        text(group_name.to_string())
+                            .size(28)
+                            .color(self.primary_text_color()),
+                        text(self.t(
+                            "像工作群一样把任务交给不同成员协作",
+                            "Coordinate work across members like a focused team chat",
+                        ))
+                        .size(15)
+                        .color(self.secondary_text_color()),
+                    ]
+                    .spacing(6)
+                    .width(Fill),
+                    info_pill(self.t("成员", "Members"), member_count.to_string(), self.theme()),
+                    info_pill(
+                        self.t("状态", "Status"),
+                        if self.settings.ai_groups_enabled {
+                            self.t("已启用", "Enabled")
+                        } else {
+                            self.t("未启用", "Disabled")
+                        },
+                        self.theme(),
+                    ),
+                ]
+                .spacing(12)
+                .align_y(Alignment::Center),
+                horizontal_rule(1),
+                scrollable(
+                    column![
+                        ai_chat_message(
+                            "System",
+                            self.t("群组助手", "Group Assistant"),
+                            self.t(
+                                "群聊已创建。添加成员或 AI 后，可以在这里按角色分配任务。",
+                                "The group is ready. Add members or AI agents, then route tasks by role here.",
+                            ),
+                            self.theme(),
+                        ),
+                        ai_chat_message(
+                            group_name,
+                            self.t("群聊", "Group"),
+                            self.t(
+                                "当前桌面端先保存群组结构和连接信息；实际调度会使用配置的 hapi 入口。",
+                                "The desktop UI now saves the group structure and endpoints; dispatch uses the configured hapi endpoint.",
+                            ),
+                            self.theme(),
+                        ),
+                    ]
+                    .spacing(16),
+                )
+                .height(Fill),
+                container(
+                    row![
+                        text("+").size(24).color(self.accent_color()),
+                        text(self.t(
+                            "@成员 或输入任务目标，保存配置后即可协作",
+                            "Mention a member or type a goal. Save settings before collaboration.",
+                        ))
+                        .size(15)
+                        .color(self.secondary_text_color())
+                        .width(Fill),
+                        text(self.t("通过 hapi 调度", "hapi dispatch"))
+                            .size(13)
+                            .color(self.muted_text_color()),
+                    ]
+                    .spacing(12)
+                    .align_y(Alignment::Center),
+                )
+                .padding([14, 16])
+                .style(feature_surface_style),
+            ]
+            .spacing(18)
+            .height(Fill),
+        )
+        .padding(22)
+        .style(panel_style)
+        .height(Fill)
+        .width(Length::FillPortion(2));
+
+        let settings_panel = container(
+            scrollable(
+                column![
+                    text(self.t("群聊设置", "Group Settings"))
+                        .size(22)
+                        .color(self.primary_text_color()),
+                    provider_form(vec![
+                        field_row(
+                            self.t("群聊名称", "Group Name"),
+                            plain_input(
+                                self.t("项目协作群", "Project Room"),
+                                &self.settings.ai_group_name,
+                                TextField::AiGroupName,
+                            ),
+                        ),
+                        checkbox(self.t("启用 AI 群组", "Enable AI Groups"), self.settings.ai_groups_enabled)
+                            .on_toggle(|value| Message::BoolChanged(BoolField::AiGroupsEnabled, value))
+                            .into(),
+                    ]),
+                    row![
+                        button(text(self.t("添加成员", "Add Member")).size(14))
+                            .padding([12, 14])
+                            .style(subtle_button_style)
+                            .on_press(Message::AddGroupMember),
+                        button(text(self.t("添加 AI", "Add AI")).size(14))
+                            .padding([12, 14])
+                            .style(accent_button_style)
+                            .on_press(Message::AddGroupAi),
+                    ]
+                    .spacing(10),
+                    text(self.t("成员", "People")).size(16).color(self.primary_text_color()),
+                    people_list,
+                    text(self.t("AI", "AI")).size(16).color(self.primary_text_color()),
+                    ai_list,
+                    channel_block(
+                        self.t("成员列表", "People List"),
+                        vec![multiline_input(
+                            "name | role | status",
+                            &self.settings.ai_group_people,
+                            TextField::AiGroupPeople,
+                            120,
+                        )],
+                    ),
+                    provider_form(vec![
+                        field_row(
+                            self.t("HAPI 入口", "HAPI Endpoint"),
+                            plain_input(
+                                "http://127.0.0.1:8766",
+                                &self.settings.ai_group_hapi_endpoint,
+                                TextField::AiGroupHapiEndpoint,
+                            ),
+                        ),
+                        field_row(
+                            self.t("调度策略", "Dispatch Strategy"),
+                            plain_input(
+                                "broadcast / primary / fallback",
+                                &self.settings.ai_group_strategy,
+                                TextField::AiGroupStrategy,
+                            ),
+                        ),
+                    ]),
+                    helper_text(
+                        self.t(
+                            "AI 成员格式：名称 | 角色 | hapi-endpoint。未填写的平台不会显示在列表里。",
+                            "AI format: name | role | hapi-endpoint. Empty platforms are hidden.",
+                        ),
+                        self.theme(),
+                    ),
+                    channel_block(
+                        "OpenClaw",
+                        vec![multiline_input(
+                            "claw-1 | planner | ws://127.0.0.1:3000",
+                            &self.settings.ai_group_openclaw_members,
+                            TextField::AiGroupOpenclawMembers,
+                            120,
+                        )],
+                    ),
+                    channel_block(
+                        "Codex",
+                        vec![multiline_input(
+                            "Codex | implementer | http://127.0.0.1:9102",
+                            &self.settings.ai_group_codex_members,
+                            TextField::AiGroupCodexMembers,
+                            120,
+                        )],
+                    ),
+                    channel_block(
+                        "Claude Code",
+                        vec![multiline_input(
+                            "claude-1 | reviewer | http://127.0.0.1:9103",
+                            &self.settings.ai_group_claude_code_members,
+                            TextField::AiGroupClaudeCodeMembers,
+                            120,
+                        )],
+                    ),
+                    channel_block(
+                        "AstrBot / OpenCode",
+                        vec![
+                            multiline_input(
+                                "astr-1 | reviewer | ws://127.0.0.1:6185",
+                                &self.settings.ai_group_astrbot_members,
+                                TextField::AiGroupAstrbotMembers,
+                                100,
+                            ),
+                            multiline_input(
+                                "opencode-1 | coder | http://127.0.0.1:9101",
+                                &self.settings.ai_group_opencode_members,
+                                TextField::AiGroupOpencodeMembers,
+                                100,
+                            ),
+                        ],
+                    ),
+                ]
+                .spacing(16),
+            )
+            .height(Fill),
+        )
+        .padding(22)
+        .style(panel_style)
+        .height(Fill)
+        .width(Length::Fixed(390.0));
+
+        return row![chat_panel, settings_panel]
+            .spacing(16)
+            .height(Fill)
+            .into();
+
+        let configured_summary = if member_count == 0 {
+            self.t(
+                "还没有配置 AI 群组成员。配置成员前，不会显示 OpenClaw、Codex 或其他代理。",
+                "No AI group members are configured yet. OpenClaw, Codex, and other agents will not appear until configured.",
+            )
+            .to_string()
+        } else {
+            format!(
+                "{}: {}",
+                self.t("已配置成员", "Configured members"),
+                member_count
+            )
+        };
+
+        let chat_panel = panel(
+            self.t("AI 群组", "AI Groups"),
+            column![
+                row![
+                    info_pill(
+                        self.t("状态", "Status"),
+                        if self.settings.ai_groups_enabled {
+                            self.t("已启用", "Enabled")
+                        } else {
+                            self.t("未启用", "Disabled")
+                        },
+                        self.theme(),
+                    ),
+                    info_pill(self.t("成员", "People"), member_count.to_string(), self.theme()),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center),
+                text(configured_summary)
+                    .size(15)
+                    .color(self.secondary_text_color()),
+                container(
+                    column![
+                        text(self.t("系统", "System"))
+                            .size(15)
+                            .color(self.accent_color()),
+                        text(self.t(
+                            "群组启用后，可以把任务交给已配置的成员进行协作；未配置的成员不会出现在这里。",
+                            "After the group is enabled, tasks can be dispatched to configured members. Unconfigured members are hidden.",
+                        ))
+                        .size(15)
+                        .color(self.primary_text_color()),
+                    ]
+                    .spacing(8),
+                )
+                .padding(16)
+                .style(feature_surface_style),
+                container(
+                    row![
+                        text("+").size(22).color(self.accent_color()),
+                        text(self.t(
+                            "@成员 或输入任务目标，保存配置后即可协作",
+                            "Mention a member or type a goal. Save settings before collaboration.",
+                        ))
+                        .size(15)
+                        .color(self.secondary_text_color()),
+                    ]
+                    .spacing(12)
+                    .align_y(Alignment::Center),
+                )
+                .padding([12, 14])
+                .style(feature_surface_style),
+            ]
+            .spacing(14)
+            .into(),
+            self.theme(),
+        );
+
+        let settings_panel = panel(
+            self.t("群聊设置", "Group Settings"),
+            column![
+                provider_form(vec![
+                    checkbox(self.t("启用 AI 群组", "Enable AI Groups"), self.settings.ai_groups_enabled)
+                        .on_toggle(|value| Message::BoolChanged(BoolField::AiGroupsEnabled, value))
+                        .into(),
+                    field_row(
+                        self.t("HAPI 入口", "HAPI Endpoint"),
+                        plain_input(
+                            "http://127.0.0.1:8766",
+                            &self.settings.ai_group_hapi_endpoint,
+                            TextField::AiGroupHapiEndpoint,
+                        ),
+                    ),
+                    field_row(
+                        self.t("调度策略", "Dispatch Strategy"),
+                        plain_input(
+                            "broadcast / primary / fallback",
+                            &self.settings.ai_group_strategy,
+                            TextField::AiGroupStrategy,
+                        ),
+                    ),
+                ]),
+                text(self.t(
+                    "每行一个成员，格式：名称 | 角色 | hapi-endpoint。未填写的平台不会显示在群组成员列表里。",
+                    "One member per line: name | role | hapi-endpoint. Empty platforms are hidden from the group list.",
+                ))
+                .size(14)
+                .color(self.secondary_text_color()),
+                channel_block(
+                    self.t("OpenClaw 成员", "OpenClaw Members"),
+                    vec![multiline_input(
+                        "claw-1 | planner | ws://127.0.0.1:3000",
+                        &self.settings.ai_group_openclaw_members,
+                        TextField::AiGroupOpenclawMembers,
+                        120,
+                    )],
+                ),
+                channel_block(
+                    self.t("AstrBot 成员", "AstrBot Members"),
+                    vec![multiline_input(
+                        "astr-1 | reviewer | ws://127.0.0.1:6185",
+                        &self.settings.ai_group_astrbot_members,
+                        TextField::AiGroupAstrbotMembers,
+                        120,
+                    )],
+                ),
+                channel_block(
+                    self.t("OpenCode 成员", "OpenCode Members"),
+                    vec![multiline_input(
+                        "opencode-1 | coder | http://127.0.0.1:9101",
+                        &self.settings.ai_group_opencode_members,
+                        TextField::AiGroupOpencodeMembers,
+                        120,
+                    )],
+                ),
+                channel_block(
+                    self.t("Codex 成员", "Codex Members"),
+                    vec![multiline_input(
+                        "codex-1 | implementer | http://127.0.0.1:9102",
+                        &self.settings.ai_group_codex_members,
+                        TextField::AiGroupCodexMembers,
+                        120,
+                    )],
+                ),
+                channel_block(
+                    self.t("Claude Code 成员", "Claude Code Members"),
+                    vec![multiline_input(
+                        "claude-1 | reviewer | http://127.0.0.1:9103",
+                        &self.settings.ai_group_claude_code_members,
+                        TextField::AiGroupClaudeCodeMembers,
+                        120,
+                    )],
+                ),
+            ]
+            .spacing(14)
+            .into(),
+            self.theme(),
+        );
+
+        return scrollable(column![chat_panel, settings_panel].spacing(16))
+            .height(Fill)
+            .into();
+
         let group_name = self.t("龙虾群", "Dragon Group");
 
         let summary = row![
@@ -1567,8 +2184,8 @@ impl EyeForge {
         )
         .padding(22)
         .style(panel_style)
-        .height(Fill)
-        .width(Length::FillPortion(2));
+        .height(Length::Shrink)
+        .width(Fill);
 
         let people = column![
             member_card(
@@ -1732,11 +2349,10 @@ impl EyeForge {
         )
         .padding(22)
         .style(panel_style)
-        .height(Fill)
-        .width(Length::Fixed(380.0));
+        .height(Length::Shrink)
+        .width(Fill);
 
-        row![chat_panel, settings_panel]
-            .spacing(16)
+        scrollable(column![chat_panel, settings_panel].spacing(16))
             .height(Fill)
             .into()
     }
@@ -1865,6 +2481,7 @@ impl EyeForge {
 
     fn ai_group_member_count(&self) -> usize {
         [
+            self.settings.ai_group_people.as_str(),
             self.settings.ai_group_openclaw_members.as_str(),
             self.settings.ai_group_astrbot_members.as_str(),
             self.settings.ai_group_opencode_members.as_str(),
@@ -1877,9 +2494,26 @@ impl EyeForge {
         .count()
     }
 
-    fn t<'a>(&self, _zh: &'a str, en: &'a str) -> &'a str {
+    fn ai_group_agent_members(&self) -> Vec<(String, String, String)> {
+        [
+            self.settings.ai_group_openclaw_members.as_str(),
+            self.settings.ai_group_astrbot_members.as_str(),
+            self.settings.ai_group_opencode_members.as_str(),
+            self.settings.ai_group_codex_members.as_str(),
+            self.settings.ai_group_claude_code_members.as_str(),
+        ]
+        .iter()
+        .flat_map(|members| parse_member_lines(members, "AI"))
+        .collect()
+    }
+
+    fn t<'a>(&self, zh: &'a str, en: &'a str) -> &'a str {
         if self.language().is_zh() {
-            zh_text(en)
+            if looks_mojibake(zh) {
+                zh_text(en)
+            } else {
+                zh
+            }
         } else {
             en
         }
@@ -1976,6 +2610,8 @@ impl EyeForge {
             TextField::QqBotAppId => self.settings.qq_bot_appid = value,
             TextField::QqBotToken => self.settings.qq_bot_token = value,
             TextField::SkillsEnabled => self.settings.skills_enabled = value,
+            TextField::AiGroupName => self.settings.ai_group_name = value,
+            TextField::AiGroupPeople => self.settings.ai_group_people = value,
             TextField::AiGroupStrategy => self.settings.ai_group_strategy = value,
             TextField::AiGroupOpenclawMembers => self.settings.ai_group_openclaw_members = value,
             TextField::AiGroupAstrbotMembers => self.settings.ai_group_astrbot_members = value,
@@ -1985,6 +2621,7 @@ impl EyeForge {
             TextField::AiGroupClaudeCodeMembers => {
                 self.settings.ai_group_claude_code_members = value
             }
+            TextField::SkillImportPath => self.skill_import_path = value,
         }
     }
 
@@ -2156,6 +2793,57 @@ fn member_card<'a>(
     .padding(12)
     .style(feature_surface_style)
     .into()
+}
+
+fn empty_member_card<'a>(title: &'a str, detail: &'a str, theme: Theme) -> Element<'a, Message> {
+    container(
+        column![
+            text(title)
+                .size(14)
+                .color(theme.extended_palette().background.base.text),
+            text(detail)
+                .size(12)
+                .color(theme.extended_palette().background.base.text),
+        ]
+        .spacing(6),
+    )
+    .padding(12)
+    .style(feature_surface_style)
+    .into()
+}
+
+fn parse_member_lines(source: &str, fallback_role: &str) -> Vec<(String, String, String)> {
+    source
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| {
+            let mut parts = line.split('|').map(str::trim);
+            let name = parts.next().unwrap_or("Member").to_string();
+            let role = parts
+                .next()
+                .filter(|value| !value.is_empty())
+                .unwrap_or(fallback_role)
+                .to_string();
+            let status = parts
+                .next()
+                .filter(|value| !value.is_empty())
+                .unwrap_or("configured")
+                .to_string();
+            (name, role, status)
+        })
+        .collect()
+}
+
+fn append_unique_line(target: &mut String, line: &str) {
+    if target.lines().any(|current| current.trim() == line.trim()) {
+        return;
+    }
+
+    if !target.trim().is_empty() {
+        target.push('\n');
+    }
+    target.push_str(line);
 }
 
 fn helper_text<'a>(value: &'a str, theme: Theme) -> Element<'a, Message> {
@@ -2489,8 +3177,140 @@ fn subtle_button_style(theme: &Theme, status: button::Status) -> button::Style {
     }
 }
 
+fn looks_mojibake(value: &str) -> bool {
+    value.chars().any(|ch| {
+        matches!(
+            ch,
+            '鍚' | '璇'
+                | '缇'
+                | '灞'
+                | '鎵'
+                | '閫'
+                | '妗'
+                | '绛'
+                | '鐩'
+                | '灏'
+                | '寰'
+                | ''
+                | '€'
+                | '�'
+        )
+    })
+}
+
 fn zh_text(english: &str) -> &str {
     match english {
+        "(empty)" => "（空）",
+        "AES Key" => "AES Key",
+        "AI Model" => "AI 模型",
+        "API Key" => "API Key",
+        "Action Delay (sec)" => "动作延迟（秒）",
+        "Agent ID" => "Agent ID",
+        "App Key" => "App Key",
+        "App Secret" => "App Secret",
+        "Ask AI to complete a desktop task..." => "让 AI 完成一个桌面任务...",
+        "AstrBot" => "AstrBot",
+        "Base URL" => "Base URL",
+        "Bot AppID" => "Bot AppID",
+        "Bot Token" => "Bot Token",
+        "Capture" => "截图",
+        "Channel Bridge Settings" => "通道桥接设置",
+        "Channels" => "通道",
+        "Claude Code" => "Claude Code",
+        "Codex" => "Codex",
+        "Coordinate daily work across specialized agents" => "协助多个专长代理完成日常任务",
+        "Corp ID" => "Corp ID",
+        "Current Form" => "当前表单",
+        "DingTalk needs at least the App Key, App Secret, and Webhook." => "钉钉至少需要 App Key、App Secret 和 Webhook。",
+        "Disabled" => "已禁用",
+        "Dragon Group" => "龙虾群",
+        "Enable Wake Word" => "启用唤醒词",
+        "Enable vision mode" => "启用视觉模式",
+        "Enabled" => "已启用",
+        "Enabled Skills" => "启用技能",
+        "Enter enabled skill names here, separated by commas. Example: browser, shell, planner" => {
+            "在这里输入启用的技能名，用英文逗号分隔。例如：browser, shell, planner"
+        }
+        "Execution Log" => "执行日志",
+        "Font Size" => "字体大小",
+        "Gateway disabled" => "网关已禁用",
+        "General" => "常规",
+        "Host" => "主机",
+        "I handle implementation, debugging, and verification when the project needs changes." => {
+            "我负责实现、调试和验证。需要改项目时可以直接分配给我。"
+        }
+        "I have the archive, collection, and research-report duties noted. Role memory is ready." => {
+            "收到，资料归档、信息搜集、研究报告这几块我记下了。角色定位存好，随时待命。"
+        }
+        "If you previously relied on QR login, the entry point stays here." => "如果之前依赖扫码登录，入口仍然保留在这里。",
+        "Language" => "语言",
+        "Launch" => "启动",
+        "Live preview, save to persist" => "实时预览，保存后持久化",
+        "Login succeeded and the token was filled in automatically." => "登录成功，Token 已自动填入。",
+        "Login succeeded." => "登录成功。",
+        "Mention multiple Claws to start collaboration" => "@多个 Claw，马上开始协作",
+        "Model" => "模型",
+        "No result yet" => "还没有结果",
+        "OpenClaw" => "OpenClaw",
+        "OpenCode" => "OpenCode",
+        "Please scan the QR code" => "请扫描二维码",
+        "Port" => "端口",
+        "Provider" => "提供商",
+        "QQ supports both go-cqhttp reverse WebSocket and QQ Official Bot mode." => {
+            "QQ 同时支持 go-cqhttp 反向 WebSocket 和 QQ 官方机器人模式。"
+        }
+        "QR Login" => "扫码登录",
+        "Quick Input Hotkey" => "快捷输入热键",
+        "Requesting the QR code..." => "正在获取二维码...",
+        "Runtime" => "运行时",
+        "Rustpotter Model Files" => "Rustpotter 模型文件",
+        "Saving writes back into the shared Rust config shape and preserves unknown fields." => {
+            "保存会写回共享 Rust 配置结构，并保留未知字段。"
+        }
+        "Scan the QR code with WeChat and confirm the login on your phone." => "请用微信扫码，并在手机上确认登录。",
+        "Screenshot Quality" => "截图质量",
+        "Secret" => "Secret",
+        "Settings Surface" => "设置面板",
+        "Skill Settings" => "技能设置",
+        "Status" => "状态",
+        "The QR code will appear here after you click QR Login." => "点击扫码登录后，二维码会显示在这里。",
+        "The QR code will be shown in the settings page. Scan it with WeChat and confirm on your phone." => {
+            "二维码会显示在设置页中，请用微信扫码并在手机上确认。"
+        }
+        "The desktop task button now calls the Rust-native backend directly. The Web UI can also talk to Rust's own WebSocket gateway, with no Python dependency." => {
+            "桌面任务按钮现在直接调用 Rust 原生后端；Web UI 也会连接 Rust 自己的 WebSocket 网关，不再依赖 Python。"
+        }
+        "The original QR login flow is not fully migrated yet. For now, the UI keeps both the button and the token field." => {
+            "原扫码登录流程还没有完全迁移完成，目前界面同时保留按钮和 Token 输入框。"
+        }
+        "Theme" => "主题",
+        "This keeps the original Skill feature entry point. Directory scanning, import, and per-skill toggles can be connected next." => {
+            "这里保留原有 Skill 功能入口，后续可以继续接入目录扫描、导入和单技能开关。"
+        }
+        "This now runs through the Rust-native execution chain. `shell:` executes a local command, `wait:` delays, and other tasks enter the native backend placeholder flow." => {
+            "现在会走 Rust 原生执行链。`shell:` 执行本地命令，`wait:` 延迟，其他任务进入原生后端流程。"
+        }
+        "This room coordinates daily work. Drop a file, describe a goal, or mention a member to collaborate." => {
+            "这里专门协助日常任务。可以上传文件、丢一个目标，或者直接 @ 某个成员开始协作。"
+        }
+        "Token" => "Token",
+        "Use comma-separated Rustpotter .rpw model/reference file paths. Picovoice AccessKey and Porcupine libraries are no longer required." => {
+            "用英文逗号分隔 Rustpotter .rpw 模型/参考文件路径。现在不再需要 Picovoice AccessKey 和 Porcupine 库。"
+        }
+        "Voice Input Hotkey" => "语音输入热键",
+        "Wake Word" => "唤醒词",
+        "WeChat Login QR Code" => "微信登录二维码",
+        "WeCom needs a full callback configuration, not just the toggle. All fields below are saved into the shared config." => {
+            "企业微信需要完整回调配置，不只是开关；下面字段都会保存到共享配置。"
+        }
+        "WebSocket Host" => "WebSocket 主机",
+        "WebSocket Port" => "WebSocket 端口",
+        "Webhook" => "Webhook",
+        "Welcome to the AI group. Tasks can be routed into the right member by role." => {
+            "欢迎来到 AI 群组。后续任务可以按角色路由给对应成员。"
+        }
+        "disabled" => "未启用",
+        "hapi dispatch" => "hapi 调度",
         "Home" => "首页",
         "Settings" => "设置",
         "Skills" => "技能",

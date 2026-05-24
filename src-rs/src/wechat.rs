@@ -2,6 +2,7 @@ use serde::Deserialize;
 use tokio::time::{sleep, Duration, Instant};
 
 const ILINK_BASE: &str = "https://ilinkai.weixin.qq.com";
+const QR_RENDER_BASE: &str = "https://api.qrserver.com/v1/create-qr-code/";
 
 #[derive(Debug, Clone)]
 pub struct QrLoginSession {
@@ -47,22 +48,70 @@ pub async fn begin_qr_login() -> Result<QrLoginSession, String> {
         .await
         .map_err(|error| format!("Failed to decode WeChat QR response: {error}"))?;
 
-    let image_bytes = client
-        .get(&qr.qrcode_img_content)
-        .send()
+    let image_bytes = load_qr_image(&client, &qr)
         .await
-        .map_err(|error| format!("Failed to download WeChat QR image: {error}"))?
-        .error_for_status()
-        .map_err(|error| format!("WeChat QR image returned an error: {error}"))?
-        .bytes()
-        .await
-        .map_err(|error| format!("Failed to read WeChat QR image: {error}"))?
-        .to_vec();
+        .map_err(|error| format!("Failed to prepare WeChat QR image: {error}"))?;
 
     Ok(QrLoginSession {
         key: qr.qrcode,
         image_bytes,
     })
+}
+
+async fn load_qr_image(client: &reqwest::Client, qr: &QrCodeResponse) -> Result<Vec<u8>, String> {
+    let content = qr.qrcode_img_content.trim();
+
+    if let Some(data) = content.strip_prefix("data:image") {
+        if let Some((_, payload)) = data.split_once(',') {
+            return decode_base64(payload);
+        }
+    }
+
+    if content.starts_with("http://") || content.starts_with("https://") {
+        if let Ok(bytes) = download_image(client, content).await {
+            return Ok(bytes);
+        }
+    }
+
+    if !content.is_empty() {
+        if let Ok(bytes) = decode_base64(content) {
+            return Ok(bytes);
+        }
+    }
+
+    let url = reqwest::Url::parse_with_params(
+        QR_RENDER_BASE,
+        &[
+            ("size", "260x260"),
+            ("margin", "12"),
+            ("data", qr.qrcode.as_str()),
+        ],
+    )
+    .map_err(|error| format!("Failed to build QR renderer URL: {error}"))?;
+
+    download_image(client, url.as_str()).await
+}
+
+async fn download_image(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, String> {
+    client
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| format!("download failed: {error}"))?
+        .error_for_status()
+        .map_err(|error| format!("endpoint returned an error: {error}"))?
+        .bytes()
+        .await
+        .map(|bytes| bytes.to_vec())
+        .map_err(|error| format!("failed to read image bytes: {error}"))
+}
+
+fn decode_base64(value: &str) -> Result<Vec<u8>, String> {
+    use base64::Engine;
+
+    base64::engine::general_purpose::STANDARD
+        .decode(value.trim())
+        .map_err(|error| format!("base64 decode failed: {error}"))
 }
 
 pub async fn wait_for_qr_confirmation(qr_key: &str) -> Result<QrLoginResult, String> {

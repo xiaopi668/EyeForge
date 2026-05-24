@@ -109,6 +109,10 @@ pub struct Config {
     #[serde(default)]
     pub ai_groups_enabled: bool,
     #[serde(default)]
+    pub ai_group_name: String,
+    #[serde(default)]
+    pub ai_group_people: String,
+    #[serde(default)]
     pub ai_group_strategy: String,
     #[serde(default)]
     pub ai_group_openclaw_members: String,
@@ -176,6 +180,8 @@ pub struct EditableConfig {
     pub qq_bot_token: String,
     pub skills_enabled: String,
     pub ai_groups_enabled: bool,
+    pub ai_group_name: String,
+    pub ai_group_people: String,
     pub ai_group_strategy: String,
     pub ai_group_openclaw_members: String,
     pub ai_group_astrbot_members: String,
@@ -201,7 +207,7 @@ fn default_font_size() -> u32 {
     9
 }
 fn default_ws_port() -> u16 {
-    8765
+    9178
 }
 fn default_qq_mode() -> String {
     "ws".into()
@@ -250,9 +256,9 @@ impl Default for Config {
             porcupine_access_key: String::new(),
             porcupine_library_path: String::new(),
             porcupine_model_path: String::new(),
-            ws_enabled: false,
+            ws_enabled: true,
             ws_host: "0.0.0.0".into(),
-            ws_port: 8765,
+            ws_port: 9178,
             ws_token: String::new(),
             wc_enabled: false,
             wc_token: String::new(),
@@ -275,6 +281,8 @@ impl Default for Config {
             use_vision: true,
             skills_enabled: vec![],
             ai_groups_enabled: false,
+            ai_group_name: String::new(),
+            ai_group_people: String::new(),
             ai_group_strategy: default_ai_group_strategy(),
             ai_group_openclaw_members: String::new(),
             ai_group_astrbot_members: String::new(),
@@ -354,6 +362,8 @@ impl Config {
             qq_bot_token: self.qq_bot_token.clone(),
             skills_enabled: self.skills_enabled.join(", "),
             ai_groups_enabled: self.ai_groups_enabled,
+            ai_group_name: self.ai_group_name.clone(),
+            ai_group_people: self.ai_group_people.clone(),
             ai_group_strategy: self.ai_group_strategy.clone(),
             ai_group_openclaw_members: self.ai_group_openclaw_members.clone(),
             ai_group_astrbot_members: self.ai_group_astrbot_members.clone(),
@@ -414,6 +424,8 @@ impl Config {
         next.qq_bot_token = editable.qq_bot_token.trim().to_string();
         next.skills_enabled = parse_string_list(&editable.skills_enabled);
         next.ai_groups_enabled = editable.ai_groups_enabled;
+        next.ai_group_name = editable.ai_group_name.trim().to_string();
+        next.ai_group_people = editable.ai_group_people.trim().to_string();
         next.ai_group_strategy = editable.ai_group_strategy.trim().to_string();
         next.ai_group_openclaw_members = editable.ai_group_openclaw_members.trim().to_string();
         next.ai_group_astrbot_members = editable.ai_group_astrbot_members.trim().to_string();

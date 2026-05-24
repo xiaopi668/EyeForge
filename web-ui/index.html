@@ -13,208 +13,150 @@
           <div class="brand-mark">EF</div>
           <div>
             <h1>EyeForge</h1>
-            <p data-i18n="sidebar_subtitle">Rust 网关控制台</p>
+            <p data-i18n="sidebar_subtitle">Rust Gateway Console</p>
           </div>
         </div>
 
         <nav class="nav">
-          <button class="nav-item is-active" data-section="dashboard" data-i18n="nav_dashboard">控制台</button>
-          <button class="nav-item" data-section="ai-groups" data-i18n="nav_ai_groups">AI 群组</button>
-          <button class="nav-item" data-section="channels" data-i18n="nav_channels">通道</button>
-          <button class="nav-item" data-section="voice" data-i18n="nav_voice">语音</button>
-          <button class="nav-item" data-section="logs" data-i18n="nav_logs">日志</button>
+          <button class="nav-item is-active" data-section="dashboard" data-i18n="nav_dashboard">Dashboard</button>
+          <button class="nav-item" data-section="ai-groups" data-i18n="nav_ai_groups">AI Groups</button>
+          <button class="nav-item" data-section="settings" data-i18n="nav_settings">Settings</button>
+          <button class="nav-item" data-section="channels" data-i18n="nav_channels">Channels</button>
+          <button class="nav-item" data-section="voice" data-i18n="nav_voice">Voice</button>
+          <button class="nav-item" data-section="logs" data-i18n="nav_logs">Logs</button>
         </nav>
 
         <div class="sidebar-foot">
           <span>v1.5.0-beta.2</span>
-          <span data-i18n="sidebar_gateway">网关 :9178</span>
+          <span data-i18n="sidebar_gateway">Gateway :9178</span>
         </div>
       </aside>
 
       <main class="main">
         <header class="hero" id="dashboard">
           <div>
-            <div class="eyebrow" data-i18n="hero_eyebrow">Rust 原生网关</div>
-            <h2 data-i18n="hero_title">EyeForge 浏览器控制台</h2>
-            <p data-i18n="hero_body">
-              Rust 网关托管此页面，统一提供 WebSocket 执行、通道状态、语音转写和 AI 群组协作入口。
-            </p>
+            <div class="eyebrow" data-i18n="hero_eyebrow">Rust Native Gateway</div>
+            <h2 data-i18n="hero_title">EyeForge browser console</h2>
+            <p data-i18n="hero_body"></p>
           </div>
           <div class="hero-actions">
-            <button id="theme-toggle" class="ghost-button" type="button" data-i18n="theme_button">主题</button>
+            <button id="theme-toggle" class="ghost-button" type="button" data-i18n="theme_button">Theme</button>
             <button id="language-toggle" class="ghost-button" type="button">EN</button>
           </div>
         </header>
 
         <section class="metrics">
           <article class="metric-card">
-            <span class="metric-label" data-i18n="metric_gateway_label">网关</span>
+            <span class="metric-label" data-i18n="metric_gateway_label">Gateway</span>
             <strong class="metric-value">:9178</strong>
             <small id="connection-detail"></small>
           </article>
           <article class="metric-card">
             <span class="metric-label" data-i18n="metric_socket_label">WebSocket</span>
-            <strong id="connection-badge" class="metric-value">离线</strong>
-            <small data-i18n="metric_socket_detail">任务执行和结构化动作共用同一条 Rust 运行链。</small>
+            <strong id="connection-badge" class="metric-value">Offline</strong>
+            <small data-i18n="metric_socket_detail"></small>
           </article>
           <article class="metric-card">
-            <span class="metric-label" data-i18n="metric_mode_label">模式</span>
-            <strong id="vision-badge" class="metric-value">视觉已开启</strong>
-            <small data-i18n="metric_mode_detail">界面提示只影响前端显示，真实执行以后端动作链为准。</small>
+            <span class="metric-label" data-i18n="metric_mode_label">Mode</span>
+            <strong id="vision-badge" class="metric-value">Vision enabled</strong>
+            <small data-i18n="metric_mode_detail"></small>
           </article>
         </section>
 
         <div class="content-grid">
           <section class="panel task-panel">
             <div class="panel-head">
-              <h3 data-i18n="task_title">任务输入</h3>
+              <h3 data-i18n="task_title">Task Composer</h3>
               <label class="toggle-line">
                 <input id="vision-toggle" type="checkbox" checked />
-                <span data-i18n="task_vision_hint">视觉提示</span>
+                <span data-i18n="task_vision_hint">Vision hint</span>
               </label>
             </div>
             <div class="task-composer">
-              <textarea
-                id="task-input"
-                data-i18n-placeholder="task_placeholder"
-                placeholder='示例：
-自然语言：打开记事本并输入一段短句
-结构化 JSON：{"actions":[{"type":"wait","seconds":1},{"type":"complete","result":"ok"}]}'
-              ></textarea>
+              <textarea id="task-input" data-i18n-placeholder="task_placeholder"></textarea>
               <div class="task-actions">
-                <button id="connect-btn" class="ghost-button" type="button" data-i18n="connect_button">连接</button>
-                <button id="disconnect-btn" class="ghost-button" type="button" data-i18n="disconnect_button">断开</button>
-                <button id="send-task" class="primary-button" type="button" data-i18n="run_button">执行任务</button>
+                <button id="connect-btn" class="ghost-button" type="button" data-i18n="connect_button">Connect</button>
+                <button id="disconnect-btn" class="ghost-button" type="button" data-i18n="disconnect_button">Disconnect</button>
+                <button id="send-task" class="primary-button" type="button" data-i18n="run_button">Run Task</button>
               </div>
               <label class="field-inline">
-                <span data-i18n="token_label">令牌</span>
-                <input id="ws-token" type="password" data-i18n-placeholder="token_placeholder" placeholder="可选令牌" />
+                <span data-i18n="token_label">Token</span>
+                <input id="ws-token" type="password" data-i18n-placeholder="token_placeholder" />
               </label>
             </div>
           </section>
 
           <section class="panel result-panel">
             <div class="panel-head">
-              <h3 data-i18n="result_title">最新结果</h3>
-              <span id="socket-state" class="state-dot is-idle">空闲</span>
+              <h3 data-i18n="result_title">Latest Result</h3>
+              <span id="socket-state" class="state-dot is-idle">Idle</span>
             </div>
             <div id="result-card" class="result-card">
-              <strong data-i18n="result_empty_title">还没有结果</strong>
-              <p data-i18n="result_empty_body">运行一个 Rust 网关任务，或使用下方语音转写。</p>
+              <strong data-i18n="result_empty_title">No result yet</strong>
+              <p data-i18n="result_empty_body"></p>
             </div>
             <div id="screenshot-card" class="screenshot-card is-empty">
-              <span data-i18n="screenshot_empty">当任务返回图像数据时，截图预览会显示在这里。</span>
+              <span data-i18n="screenshot_empty"></span>
               <img id="screenshot-preview" alt="Screenshot preview" />
             </div>
           </section>
 
           <section class="panel ai-group-panel" id="ai-groups">
-            <div class="group-chat">
-              <div class="group-chat-head">
-                <div>
-                  <h3 data-i18n="ai_group_name">龙虾群</h3>
-                  <p data-i18n="ai_group_desc">协助负责人完成日常任务</p>
-                </div>
-                <div class="group-tools">
-                  <button class="icon-button" type="button" title="Mail">M</button>
-                  <button class="icon-button" type="button" title="Files">F</button>
-                  <button class="icon-button" type="button" title="Pin">P</button>
-                  <button class="icon-button" type="button" title="Settings">S</button>
-                </div>
-              </div>
-              <div class="message-stream">
-                <article class="chat-message">
-                  <div class="avatar">K</div>
-                  <div>
-                    <div class="message-meta"><strong>Kimi</strong><span data-i18n="role_coordinator">协调者</span></div>
-                    <p data-i18n="msg_kimi_1">收到，资料归档、信息搜集、研究报告这几块我记下了。角色定位存好，随时待命。</p>
-                  </div>
-                </article>
-                <article class="chat-message">
-                  <div class="avatar avatar-warm">C</div>
-                  <div>
-                    <div class="message-meta"><strong>Claw-Scripte</strong><span data-i18n="role_script">脚本专家</span></div>
-                    <p data-i18n="msg_script">欢迎来到 AI 群组。你可以先熟悉沟通规则，后续任务会按角色进入对应成员。</p>
-                  </div>
-                </article>
-                <article class="chat-message">
-                  <div class="avatar avatar-human">M</div>
-                  <div>
-                    <div class="message-meta"><strong>Moonwalker1188</strong><span data-i18n="role_owner">群主</span></div>
-                    <p data-i18n="msg_owner">这里专门协助日常任务。可以上传文件、丢一个目标，或者直接 @ 某个成员开始协作。</p>
-                  </div>
-                </article>
-                <article class="chat-message">
-                  <div class="avatar avatar-code">X</div>
-                  <div>
-                    <div class="message-meta"><strong>Codex</strong><span data-i18n="role_code">代码执行</span></div>
-                    <p data-i18n="msg_codex">我负责实现、调试和验证。需要改项目时可以直接分配给我。</p>
-                  </div>
-                </article>
-              </div>
-              <div class="group-composer">
-                <button class="icon-button" type="button">+</button>
-                <input data-i18n-placeholder="ai_group_placeholder" placeholder="@多个 Claw，马上开始协作" />
-              </div>
+            <div class="group-empty" data-i18n="ai_empty_title">No AI group yet</div>
+          </section>
+
+          <section class="panel settings-panel" id="settings">
+            <div class="panel-head">
+              <h3 data-i18n="settings_title">Settings</h3>
+              <span class="state-dot is-connected" data-i18n="settings_local">Local</span>
             </div>
-            <aside class="group-settings">
-              <button class="close-button" type="button">X</button>
-              <div class="group-cover">
-                <div class="avatar-stack"><span>C</span><span>K</span></div>
-                <h3 data-i18n="ai_group_name">龙虾群</h3>
-                <p data-i18n="ai_group_desc">协助负责人完成日常任务</p>
-              </div>
-              <div class="quick-actions">
-                <button type="button"><strong>people</strong><span data-i18n="invite_member">邀请成员</span></button>
-                <button type="button"><strong>+</strong><span data-i18n="add_claw">添加 Claw</span></button>
-                <button type="button"><strong>edit</strong><span data-i18n="edit_group">编辑群信息</span></button>
-              </div>
-              <h4 data-i18n="people_title">人类</h4>
-              <div class="member-list">
-                <div class="member-row"><span class="avatar small">M</span><strong>Moonwalker1455</strong><em data-i18n="role_owner">群主</em></div>
-                <div class="member-row"><span class="avatar small avatar-human">M</span><strong>Moonwalker1456</strong><em data-i18n="available">可聊天</em></div>
-                <div class="member-row"><span class="avatar small avatar-human">M</span><strong>Moonwalker1187</strong><em data-i18n="available">可聊天</em></div>
-              </div>
-              <h4 data-i18n="claw_title">Claw</h4>
-              <div class="member-list">
-                <div class="member-row"><span class="avatar small">K</span><strong>Kimi</strong><em>47</em></div>
-                <div class="member-row"><span class="avatar small avatar-warm">S</span><strong>Claw-Scripte</strong><em>47</em></div>
-                <div class="member-row"><span class="avatar small avatar-code">C</span><strong>Codex</strong><em>47</em></div>
-                <div class="member-row"><span class="avatar small avatar-warm">A</span><strong>Claw-Archiv</strong><em>47</em></div>
-              </div>
-            </aside>
+            <div class="settings-grid">
+              <label class="toggle-line">
+                <input id="webui-toggle" type="checkbox" checked />
+                <span data-i18n="settings_webui_toggle">Enable Web UI gateway</span>
+              </label>
+              <label class="toggle-line">
+                <input id="settings-vision-toggle" type="checkbox" checked />
+                <span data-i18n="settings_vision_toggle">Enable vision hint</span>
+              </label>
+              <label class="toggle-line">
+                <input id="settings-skill-toggle" type="checkbox" checked />
+                <span data-i18n="settings_skill_toggle">Enable Skill system</span>
+              </label>
+              <p data-i18n="settings_hint"></p>
+            </div>
           </section>
 
           <section class="panel channels-panel" id="channels">
             <div class="panel-head">
-              <h3 data-i18n="channels_title">通道矩阵</h3>
-              <button id="refresh-channels" class="ghost-button" type="button" data-i18n="refresh_button">刷新</button>
+              <h3 data-i18n="channels_title">Channel Matrix</h3>
+              <button id="refresh-channels" class="ghost-button" type="button" data-i18n="refresh_button">Refresh</button>
             </div>
             <div id="channel-grid" class="channel-grid"></div>
           </section>
 
           <section class="panel voice-panel" id="voice">
             <div class="panel-head">
-              <h3 data-i18n="voice_title">语音控制台</h3>
-              <button id="refresh-devices" class="ghost-button" type="button" data-i18n="devices_button">设备</button>
+              <h3 data-i18n="voice_title">Voice Console</h3>
+              <button id="refresh-devices" class="ghost-button" type="button" data-i18n="devices_button">Devices</button>
             </div>
             <div class="voice-grid">
               <div class="voice-card">
-                <h4 data-i18n="voice_devices_title">输入设备</h4>
+                <h4 data-i18n="voice_devices_title">Input Devices</h4>
                 <ul id="device-list" class="device-list"></ul>
               </div>
               <div class="voice-card">
-                <h4 data-i18n="voice_transcribe_title">原生语音转写</h4>
+                <h4 data-i18n="voice_transcribe_title">Native Transcription</h4>
                 <label class="field-inline">
-                  <span data-i18n="voice_seconds_label">录音秒数</span>
+                  <span data-i18n="voice_seconds_label">Seconds</span>
                   <input id="voice-seconds" type="number" min="1" max="15" value="4" />
                 </label>
                 <div class="inline-actions">
-                  <button id="voice-record" class="primary-button" type="button" data-i18n="voice_record_button">录音并转写</button>
+                  <button id="voice-record" class="primary-button" type="button" data-i18n="voice_record_button">Record + Transcribe</button>
                 </div>
                 <div id="voice-result" class="voice-result">
-                  <strong data-i18n="voice_empty_title">还没有转写结果</strong>
-                  <p data-i18n="voice_empty_body">Rust 后端会从默认麦克风录音，并在配置支持的提供商后执行转写。</p>
+                  <strong data-i18n="voice_empty_title">No transcription yet</strong>
+                  <p data-i18n="voice_empty_body"></p>
                 </div>
               </div>
             </div>
@@ -222,8 +164,8 @@
 
           <section class="panel log-panel" id="logs">
             <div class="panel-head">
-              <h3 data-i18n="logs_title">事件日志</h3>
-              <button id="clear-log" class="ghost-button" type="button" data-i18n="clear_button">清空</button>
+              <h3 data-i18n="logs_title">Event Log</h3>
+              <button id="clear-log" class="ghost-button" type="button" data-i18n="clear_button">Clear</button>
             </div>
             <div id="log-output" class="log-output"></div>
           </section>
