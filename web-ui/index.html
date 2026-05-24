@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EyeForge Web UI</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">EF</div>
+          <div>
+            <h1>EyeForge</h1>
+            <p data-i18n="sidebar_subtitle">Rust Gateway Console</p>
+          </div>
+        </div>
+
+        <nav class="nav">
+          <button class="nav-item is-active" data-section="dashboard" data-i18n="nav_dashboard">Dashboard</button>
+          <button class="nav-item" data-section="channels" data-i18n="nav_channels">Channels</button>
+          <button class="nav-item" data-section="voice" data-i18n="nav_voice">Voice</button>
+          <button class="nav-item" data-section="logs" data-i18n="nav_logs">Logs</button>
+        </nav>
+
+        <div class="sidebar-foot">
+          <span>v1.5.0-beta.2</span>
+          <span data-i18n="sidebar_gateway">Gateway :9178</span>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="hero" id="dashboard">
+          <div>
+            <div class="eyebrow" data-i18n="hero_eyebrow">Rust Native Gateway</div>
+            <h2 data-i18n="hero_title">Browser console for the EyeForge gateway</h2>
+            <p data-i18n="hero_body">
+              One port, one backend. The Rust gateway serves this UI on
+              http://127.0.0.1:9178/, exposes WebSocket execution at /ws, and
+              publishes channel and voice APIs too.
+            </p>
+          </div>
+          <div class="hero-actions">
+            <button id="theme-toggle" class="ghost-button" type="button" data-i18n="theme_button">Theme</button>
+            <button id="language-toggle" class="ghost-button" type="button">中文</button>
+          </div>
+        </header>
+
+        <section class="metrics">
+          <article class="metric-card">
+            <span class="metric-label" data-i18n="metric_gateway_label">Gateway</span>
+            <strong class="metric-value">:9178</strong>
+            <small id="connection-detail"></small>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label" data-i18n="metric_socket_label">WebSocket</span>
+            <strong id="connection-badge" class="metric-value">Offline</strong>
+            <small data-i18n="metric_socket_detail">Task execution and structured actions share the same runtime.</small>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label" data-i18n="metric_mode_label">Mode</span>
+            <strong id="vision-badge" class="metric-value">Vision enabled</strong>
+            <small data-i18n="metric_mode_detail">Visual hints only affect the UI. Real execution follows backend actions.</small>
+          </article>
+        </section>
+
+        <div class="content-grid">
+          <section class="panel task-panel">
+            <div class="panel-head">
+              <h3 data-i18n="task_title">Task Composer</h3>
+              <label class="toggle-line">
+                <input id="vision-toggle" type="checkbox" checked />
+                <span data-i18n="task_vision_hint">Vision hint</span>
+              </label>
+            </div>
+            <div class="task-composer">
+              <textarea
+                id="task-input"
+                data-i18n-placeholder="task_placeholder"
+                placeholder='Examples:
+Natural language: Open Notepad and type a short note
+Structured JSON: {"actions":[{"type":"wait","seconds":1},{"type":"complete","result":"ok"}]}'
+              ></textarea>
+              <div class="task-actions">
+                <button id="connect-btn" class="ghost-button" type="button" data-i18n="connect_button">Connect</button>
+                <button id="disconnect-btn" class="ghost-button" type="button" data-i18n="disconnect_button">Disconnect</button>
+                <button id="send-task" class="primary-button" type="button" data-i18n="run_button">Run Task</button>
+              </div>
+              <label class="field-inline">
+                <span data-i18n="token_label">Token</span>
+                <input id="ws-token" type="password" data-i18n-placeholder="token_placeholder" placeholder="Optional token" />
+              </label>
+            </div>
+          </section>
+
+          <section class="panel result-panel">
+            <div class="panel-head">
+              <h3 data-i18n="result_title">Latest Result</h3>
+              <span id="socket-state" class="state-dot is-idle">Idle</span>
+            </div>
+            <div id="result-card" class="result-card">
+              <strong data-i18n="result_empty_title">No result yet</strong>
+              <p data-i18n="result_empty_body">Run a task from the Rust gateway or use voice transcription below.</p>
+            </div>
+            <div id="screenshot-card" class="screenshot-card is-empty">
+              <span data-i18n="screenshot_empty">Screenshot output will appear here when a task returns image data.</span>
+              <img id="screenshot-preview" alt="Screenshot preview" />
+            </div>
+          </section>
+
+          <section class="panel channels-panel" id="channels">
+            <div class="panel-head">
+              <h3 data-i18n="channels_title">Channel Matrix</h3>
+              <button id="refresh-channels" class="ghost-button" type="button" data-i18n="refresh_button">Refresh</button>
+            </div>
+            <div id="channel-grid" class="channel-grid"></div>
+          </section>
+
+          <section class="panel voice-panel" id="voice">
+            <div class="panel-head">
+              <h3 data-i18n="voice_title">Voice Console</h3>
+              <button id="refresh-devices" class="ghost-button" type="button" data-i18n="devices_button">Devices</button>
+            </div>
+            <div class="voice-grid">
+              <div class="voice-card">
+                <h4 data-i18n="voice_devices_title">Input Devices</h4>
+                <ul id="device-list" class="device-list"></ul>
+              </div>
+              <div class="voice-card">
+                <h4 data-i18n="voice_transcribe_title">Native Transcription</h4>
+                <label class="field-inline">
+                  <span data-i18n="voice_seconds_label">Seconds</span>
+                  <input id="voice-seconds" type="number" min="1" max="15" value="4" />
+                </label>
+                <div class="inline-actions">
+                  <button id="voice-record" class="primary-button" type="button" data-i18n="voice_record_button">Record + Transcribe</button>
+                </div>
+                <div id="voice-result" class="voice-result">
+                  <strong data-i18n="voice_empty_title">No transcription yet</strong>
+                  <p data-i18n="voice_empty_body">The Rust backend records from the default microphone and transcribes when a supported provider is configured.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel log-panel" id="logs">
+            <div class="panel-head">
+              <h3 data-i18n="logs_title">Event Log</h3>
+              <button id="clear-log" class="ghost-button" type="button" data-i18n="clear_button">Clear</button>
+            </div>
+            <div id="log-output" class="log-output"></div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

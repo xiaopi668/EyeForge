@@ -1,8 +1,8 @@
 __pycache__/
 logs/
 /config.json
-venv/
 /EyeForge_Setup.exe
 /EyeForge_Setup.old
 /setup_stub.cs
-/build_installer.py
+/src-rs/target/
+/src-rs-demo*.png
