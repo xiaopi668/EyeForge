@@ -22,7 +22,6 @@ use tokio::sync::oneshot;
 use crate::config::Config;
 use crate::{channels, runtime, voice};
 
-pub const GATEWAY_PORT: u16 = 9178;
 pub const GATEWAY_WS_PATH: &str = "/ws";
 
 struct ServerHandle {
@@ -43,6 +42,10 @@ fn state() -> &'static Mutex<Option<ServerHandle>> {
 
 pub fn restart(config: &Config) -> Result<(), String> {
     stop();
+
+    if !config.ws_enabled {
+        return Ok(());
+    }
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
     let config_clone = config.clone();
@@ -86,7 +89,7 @@ pub fn stop() {
 }
 
 async fn run_server(config: Config, shutdown: oneshot::Receiver<()>) -> Result<(), String> {
-    let address = format!("{}:{}", config.ws_host, GATEWAY_PORT);
+    let address = format!("{}:{}", config.ws_host, config.ws_port);
     let listener = TcpListener::bind(address.as_str())
         .await
         .map_err(|error| format!("Failed to bind Rust gateway on {address}: {error}"))?;

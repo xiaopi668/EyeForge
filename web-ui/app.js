@@ -3,7 +3,7 @@ const state = {
   connected: false,
   authenticated: false,
   theme: localStorage.getItem("eyeforge-web-theme") || "dark",
-  language: localStorage.getItem("eyeforge-web-language") || "en",
+  language: localStorage.getItem("eyeforge-web-language") || "zh",
 };
 
 const dict = {
@@ -11,23 +11,24 @@ const dict = {
     sidebar_subtitle: "Rust Gateway Console",
     sidebar_gateway: "Gateway :9178",
     nav_dashboard: "Dashboard",
+    nav_ai_groups: "AI Groups",
     nav_channels: "Channels",
     nav_voice: "Voice",
     nav_logs: "Logs",
     hero_eyebrow: "Rust Native Gateway",
-    hero_title: "Browser console for the EyeForge gateway",
+    hero_title: "EyeForge browser console",
     hero_body:
-      "One port, one backend. The Rust gateway serves this UI on http://127.0.0.1:9178/, exposes WebSocket execution at /ws, and publishes channel and voice APIs too.",
+      "The Rust gateway serves this UI and exposes WebSocket execution, channel status, voice transcription, and AI group collaboration.",
     theme_button: "Theme",
     metric_gateway_label: "Gateway",
     metric_socket_label: "WebSocket",
-    metric_socket_detail: "Task execution and structured actions share the same runtime.",
+    metric_socket_detail: "Task execution and structured actions share the same Rust runtime.",
     metric_mode_label: "Mode",
     metric_mode_detail: "Visual hints only affect the UI. Real execution follows backend actions.",
     task_title: "Task Composer",
     task_vision_hint: "Vision hint",
     task_placeholder:
-      "Examples:\nNatural language: Open Notepad and type a short note\nStructured JSON: {\"actions\":[{\"type\":\"wait\",\"seconds\":1},{\"type\":\"complete\",\"result\":\"ok\"}]}",
+      'Examples:\nNatural language: Open Notepad and type a short note\nStructured JSON: {"actions":[{"type":"wait","seconds":1},{"type":"complete","result":"ok"}]}',
     connect_button: "Connect",
     disconnect_button: "Disconnect",
     run_button: "Run Task",
@@ -35,8 +36,25 @@ const dict = {
     token_placeholder: "Optional token",
     result_title: "Latest Result",
     result_empty_title: "No result yet",
-    result_empty_body: "Run a task from the Rust gateway or use voice transcription below.",
+    result_empty_body: "Run a Rust gateway task or use voice transcription below.",
     screenshot_empty: "Screenshot output will appear here when a task returns image data.",
+    ai_group_name: "Dragon Group",
+    ai_group_desc: "Coordinate daily work across specialized agents",
+    role_coordinator: "Coordinator",
+    role_script: "Script Specialist",
+    role_owner: "Owner",
+    role_code: "Code Implementer",
+    msg_kimi_1: "I have the archive, collection, and research-report duties noted. Role memory is ready.",
+    msg_script: "Welcome to the AI group. Tasks can be routed into the right member by role.",
+    msg_owner: "This room coordinates daily work. Drop a file, describe a goal, or mention a member to collaborate.",
+    msg_codex: "I handle implementation, debugging, and verification when the project needs changes.",
+    ai_group_placeholder: "Mention multiple Claws to start collaboration",
+    invite_member: "Invite Member",
+    add_claw: "Add Claw",
+    edit_group: "Edit Group",
+    people_title: "People",
+    claw_title: "Claw",
+    available: "Available",
     channels_title: "Channel Matrix",
     refresh_button: "Refresh",
     voice_title: "Voice Console",
@@ -69,34 +87,43 @@ const dict = {
     voiceRecordingTitle: "Recording...",
     voiceRecordingBody: (seconds) => `Capturing ${seconds} second(s) from the default microphone`,
     voiceErrorTitle: "Voice error",
-    resultSeed: "Run a gateway task to populate this card.",
     connectError: "WebSocket is not connected",
     taskEmpty: "Task is empty",
     socketError: "WebSocket error",
     alreadyConnected: "Already connected",
     openingSocket: (url) => `Opening ${url}`,
+    socketClosed: "socket closed",
+    manual: "manual",
+    open: "Open",
+    idle: "Idle",
+    error: "Error",
+    auth: "Auth",
+    socket: "Socket",
+    task: "Task",
+    voice: "Voice",
+    bootTitle: "Boot",
   },
   zh: {
     sidebar_subtitle: "Rust 网关控制台",
     sidebar_gateway: "网关 :9178",
     nav_dashboard: "控制台",
+    nav_ai_groups: "AI 群组",
     nav_channels: "通道",
     nav_voice: "语音",
     nav_logs: "日志",
     hero_eyebrow: "Rust 原生网关",
-    hero_title: "浏览器里的 EyeForge 控制台",
-    hero_body:
-      "一个端口，一套后端。Rust 网关在 http://127.0.0.1:9178/ 托管这个页面，在 /ws 提供任务执行，并同时暴露通道和语音 API。",
+    hero_title: "EyeForge 浏览器控制台",
+    hero_body: "Rust 网关托管此页面，统一提供 WebSocket 执行、通道状态、语音转写和 AI 群组协作入口。",
     theme_button: "主题",
     metric_gateway_label: "网关",
     metric_socket_label: "WebSocket",
     metric_socket_detail: "任务执行和结构化动作共用同一条 Rust 运行链。",
     metric_mode_label: "模式",
-    metric_mode_detail: "视觉提示只影响界面，真实执行以后端动作链为准。",
+    metric_mode_detail: "界面提示只影响前端显示，真实执行以后端动作链为准。",
     task_title: "任务输入",
     task_vision_hint: "视觉提示",
     task_placeholder:
-      "示例：\n自然语言：打开记事本并输入一段短句\n结构化 JSON：{\"actions\":[{\"type\":\"wait\",\"seconds\":1},{\"type\":\"complete\",\"result\":\"ok\"}]}",
+      '示例：\n自然语言：打开记事本并输入一段短句\n结构化 JSON：{"actions":[{"type":"wait","seconds":1},{"type":"complete","result":"ok"}]}',
     connect_button: "连接",
     disconnect_button: "断开",
     run_button: "执行任务",
@@ -104,8 +131,25 @@ const dict = {
     token_placeholder: "可选令牌",
     result_title: "最新结果",
     result_empty_title: "还没有结果",
-    result_empty_body: "运行一个 Rust 网关任务，或者在下方使用语音转写。",
+    result_empty_body: "运行一个 Rust 网关任务，或使用下方语音转写。",
     screenshot_empty: "当任务返回图像数据时，截图预览会显示在这里。",
+    ai_group_name: "龙虾群",
+    ai_group_desc: "协助负责人完成日常任务",
+    role_coordinator: "协调者",
+    role_script: "脚本专家",
+    role_owner: "群主",
+    role_code: "代码执行",
+    msg_kimi_1: "收到，资料归档、信息搜集、研究报告这几块我记下了。角色定位存好，随时待命。",
+    msg_script: "欢迎来到 AI 群组。你可以先熟悉沟通规则，后续任务会按角色进入对应成员。",
+    msg_owner: "这里专门协助日常任务。可以上传文件、丢一个目标，或者直接 @ 某个成员开始协作。",
+    msg_codex: "我负责实现、调试和验证。需要改项目时可以直接分配给我。",
+    ai_group_placeholder: "@多个 Claw，马上开始协作",
+    invite_member: "邀请成员",
+    add_claw: "添加 Claw",
+    edit_group: "编辑群信息",
+    people_title: "人类",
+    claw_title: "Claw",
+    available: "可聊天",
     channels_title: "通道矩阵",
     refresh_button: "刷新",
     voice_title: "语音控制台",
@@ -115,17 +159,17 @@ const dict = {
     voice_seconds_label: "录音秒数",
     voice_record_button: "录音并转写",
     voice_empty_title: "还没有转写结果",
-    voice_empty_body: "Rust 后端会从默认麦克风录音，并在配置了支持的提供商后执行转写。",
+    voice_empty_body: "Rust 后端会从默认麦克风录音，并在配置支持的提供商后执行转写。",
     logs_title: "事件日志",
     clear_button: "清空",
     online: "已连接",
     pending: "待认证",
-    offline: "未连接",
+    offline: "离线",
     waiting: "等待连接 Rust 网关",
-    connectedDetail: "WebSocket 与认证均已通过",
+    connectedDetail: "WebSocket 已连接，认证通过",
     awaitingDetail: "连接已建立，正在等待认证结果",
-    vision: "视觉模式",
-    command: "命令模式",
+    vision: "视觉已开启",
+    command: "仅命令",
     boot: "EyeForge Web UI 已就绪",
     noResult: "还没有结果",
     noVoice: "还没有转写结果",
@@ -137,12 +181,21 @@ const dict = {
     voiceRecordingTitle: "正在录音...",
     voiceRecordingBody: (seconds) => `正在从默认麦克风录制 ${seconds} 秒`,
     voiceErrorTitle: "语音错误",
-    resultSeed: "运行一个网关任务后，这里会显示最新结果。",
     connectError: "WebSocket 尚未连接",
     taskEmpty: "任务内容不能为空",
     socketError: "WebSocket 连接错误",
     alreadyConnected: "已经连接",
     openingSocket: (url) => `正在连接 ${url}`,
+    socketClosed: "连接已关闭",
+    manual: "手动",
+    open: "已打开",
+    idle: "空闲",
+    error: "错误",
+    auth: "认证",
+    socket: "连接",
+    task: "任务",
+    voice: "语音",
+    bootTitle: "启动",
   },
 };
 
@@ -178,11 +231,7 @@ const els = {
 };
 
 function t(key) {
-  return dict[state.language][key];
-}
-
-function gatewayHttpUrl(path = "") {
-  return `${location.origin}${path}`;
+  return dict[state.language][key] ?? dict.en[key] ?? key;
 }
 
 function gatewayWsUrl() {
@@ -203,7 +252,8 @@ function applyTranslations() {
   for (const node of els.i18nPlaceholders) {
     node.placeholder = t(node.dataset.i18nPlaceholder);
   }
-  els.languageToggle.textContent = state.language === "en" ? "中文" : "EN";
+  els.languageToggle.textContent = state.language === "zh" ? "EN" : "中文";
+  document.documentElement.lang = state.language === "zh" ? "zh-CN" : "en";
   updateConnectionUi();
   setVisionBadge();
 }
@@ -214,19 +264,6 @@ function setLanguage(language) {
   applyTranslations();
 }
 
-function logLine(title, detail, tone = "info") {
-  const line = document.createElement("div");
-  line.className = "log-line";
-  line.innerHTML = `
-    <small>${new Date().toLocaleTimeString()} · ${title}</small>
-    <code>${escapeHtml(detail)}</code>
-  `;
-  if (tone === "error") {
-    line.style.borderColor = "rgba(255, 123, 123, 0.28)";
-  }
-  els.log.prepend(line);
-}
-
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -234,22 +271,35 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;");
 }
 
+function logLine(title, detail, tone = "info") {
+  const line = document.createElement("div");
+  line.className = "log-line";
+  line.innerHTML = `
+    <small>${new Date().toLocaleTimeString()} · ${escapeHtml(title)}</small>
+    <code>${escapeHtml(detail)}</code>
+  `;
+  if (tone === "error") {
+    line.style.borderColor = "rgba(255, 123, 123, 0.45)";
+  }
+  els.log.prepend(line);
+}
+
 function updateConnectionUi() {
   if (state.connected && state.authenticated) {
-    els.socketState.textContent = "Connected";
+    els.socketState.textContent = t("online");
     els.socketState.className = "state-dot is-connected";
     els.connectionBadge.textContent = t("online");
     els.connectionDetail.textContent = t("connectedDetail");
     return;
   }
   if (state.connected) {
-    els.socketState.textContent = "Open";
+    els.socketState.textContent = t("open");
     els.socketState.className = "state-dot";
     els.connectionBadge.textContent = t("pending");
     els.connectionDetail.textContent = t("awaitingDetail");
     return;
   }
-  els.socketState.textContent = "Idle";
+  els.socketState.textContent = t("idle");
   els.socketState.className = "state-dot is-idle";
   els.connectionBadge.textContent = t("offline");
   els.connectionDetail.textContent = t("waiting");
@@ -277,7 +327,7 @@ function setScreenshot(base64) {
   els.screenshotPreview.src = `data:image/png;base64,${base64}`;
 }
 
-function disconnectSocket(reason = "manual") {
+function disconnectSocket(reason = t("manual")) {
   if (state.ws) {
     state.ws.close();
     state.ws = null;
@@ -285,21 +335,21 @@ function disconnectSocket(reason = "manual") {
   state.connected = false;
   state.authenticated = false;
   updateConnectionUi();
-  if (reason !== "manual") {
-    logLine("Socket", reason, "error");
+  if (reason !== t("manual")) {
+    logLine(t("socket"), reason, "error");
   }
 }
 
 function connectSocket() {
   if (state.ws && state.connected) {
-    logLine("Socket", t("alreadyConnected"));
+    logLine(t("socket"), t("alreadyConnected"));
     return;
   }
 
   const url = gatewayWsUrl();
   const ws = new WebSocket(url);
   state.ws = ws;
-  logLine("Socket", t("openingSocket")(url));
+  logLine(t("socket"), t("openingSocket")(url));
 
   ws.addEventListener("open", () => {
     state.connected = true;
@@ -307,7 +357,7 @@ function connectSocket() {
     updateConnectionUi();
     const authPayload = { type: "auth", token: els.token.value.trim() };
     ws.send(JSON.stringify(authPayload));
-    logLine("Auth", JSON.stringify(authPayload, null, 2));
+    logLine(t("auth"), JSON.stringify(authPayload, null, 2));
   });
 
   ws.addEventListener("message", (event) => {
@@ -337,132 +387,114 @@ function connectSocket() {
     );
   });
 
-  ws.addEventListener("close", () => disconnectSocket("socket closed"));
+  ws.addEventListener("close", () => disconnectSocket(t("socketClosed")));
   ws.addEventListener("error", () => {
-    els.socketState.textContent = "Error";
+    els.socketState.textContent = t("error");
     els.socketState.className = "state-dot is-error";
-    logLine("Socket", t("socketError"), "error");
+    logLine(t("socket"), t("socketError"), "error");
   });
 }
 
 function sendTask() {
   const task = els.taskInput.value.trim();
   if (!task) {
-    logLine("Task", t("taskEmpty"), "error");
+    logLine(t("task"), t("taskEmpty"), "error");
     return;
   }
   if (!state.ws || !state.connected) {
-    logLine("Task", t("connectError"), "error");
+    logLine(t("task"), t("connectError"), "error");
     return;
   }
   const payload = { type: "task", task };
   state.ws.send(JSON.stringify(payload));
-  logLine("Task", JSON.stringify(payload, null, 2));
+  logLine(t("task"), JSON.stringify(payload, null, 2));
 }
 
 async function loadChannels() {
   els.channelGrid.innerHTML = `<div class="empty-state">${t("channelsLoading")}</div>`;
   try {
-    const response = await fetch(gatewayHttpUrl("/api/channels"));
+    const response = await fetch("/api/channels");
     const payload = await response.json();
     const cards = (payload.channels || []).map(
       (channel) => `
         <article class="channel-card">
-          <div class="channel-top">
-            <strong>${escapeHtml(channel.label)}</strong>
-            <span class="badge badge-${escapeHtml(channel.status)}">${escapeHtml(channel.status)}</span>
-          </div>
-          <p>${escapeHtml(channel.detail)}</p>
+          <span>${escapeHtml(channel.kind || "channel")}</span>
+          <strong>${escapeHtml(channel.name || "Channel")}</strong>
+          <small>${escapeHtml(channel.enabled ? t("online") : t("offline"))}</small>
+          <p>${escapeHtml(channel.detail || "")}</p>
         </article>
       `,
     );
     els.channelGrid.innerHTML = cards.join("") || `<div class="empty-state">${t("noChannels")}</div>`;
   } catch (error) {
-    els.channelGrid.innerHTML = `<div class="empty-state">${escapeHtml(String(error))}</div>`;
+    els.channelGrid.innerHTML = `<div class="empty-state">${escapeHtml(error)}</div>`;
   }
 }
 
 async function loadVoiceDevices() {
   els.deviceList.innerHTML = `<li>${t("devicesLoading")}</li>`;
   try {
-    const response = await fetch(gatewayHttpUrl("/api/voice/devices"));
+    const response = await fetch("/api/voice/devices");
     const payload = await response.json();
     const devices = payload.devices || [];
-    els.deviceList.innerHTML = devices
-      .map(
-        (device) =>
-          `<li>${escapeHtml(device.name)}${device.is_default ? ` <span>(${t("defaultDevice")})</span>` : ""}</li>`,
-      )
-      .join("");
-    if (!devices.length) {
-      els.deviceList.innerHTML = `<li>${t("noDevices")}</li>`;
-    }
+    els.deviceList.innerHTML =
+      devices
+        .map((device) => `<li>${escapeHtml(device.name)}${device.default ? ` · ${t("defaultDevice")}` : ""}</li>`)
+        .join("") || `<li>${t("noDevices")}</li>`;
   } catch (error) {
-    els.deviceList.innerHTML = `<li>${escapeHtml(String(error))}</li>`;
+    els.deviceList.innerHTML = `<li>${escapeHtml(error)}</li>`;
   }
 }
 
 async function transcribeVoice() {
-  const seconds = Math.max(1, Math.min(15, Number(els.voiceSeconds.value || 4)));
+  const seconds = Number(els.voiceSeconds.value || 4);
   setVoiceResult(t("voiceRecordingTitle"), t("voiceRecordingBody")(seconds));
   try {
-    const response = await fetch(gatewayHttpUrl("/api/voice/transcribe"), {
+    const response = await fetch("/api/voice/transcribe", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ seconds }),
     });
     const payload = await response.json();
-    if (!response.ok) {
+    if (!payload.ok) {
       throw new Error(payload.error || "Voice transcription failed");
     }
-    setVoiceResult(
-      payload.result.text,
-      `sample rate ${payload.result.sample_rate}, channels ${payload.result.channels}`,
-    );
-    logLine("Voice", JSON.stringify(payload.result, null, 2));
+    setVoiceResult(payload.result.text || t("noVoice"), `sample rate ${payload.result.sample_rate}`);
+    logLine(t("voice"), JSON.stringify(payload.result, null, 2));
   } catch (error) {
     setVoiceResult(t("voiceErrorTitle"), String(error));
-    logLine("Voice", String(error), "error");
+    logLine(t("voice"), String(error), "error");
+  }
+}
+
+function bindNavigation() {
+  for (const item of els.navItems) {
+    item.addEventListener("click", () => {
+      els.navItems.forEach((entry) => entry.classList.remove("is-active"));
+      item.classList.add("is-active");
+      const target = document.getElementById(item.dataset.section);
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 }
 
 els.connectBtn.addEventListener("click", connectSocket);
-els.disconnectBtn.addEventListener("click", () => disconnectSocket("manual"));
+els.disconnectBtn.addEventListener("click", () => disconnectSocket());
 els.sendTask.addEventListener("click", sendTask);
-els.clearLog.addEventListener("click", () => {
-  els.log.innerHTML = "";
-});
-els.taskInput.addEventListener("keydown", (event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-    sendTask();
-  }
-});
+els.clearLog.addEventListener("click", () => (els.log.innerHTML = ""));
 els.visionToggle.addEventListener("change", setVisionBadge);
-els.themeToggle.addEventListener("click", () => {
-  setTheme(state.theme === "dark" ? "light" : "dark");
-});
-els.languageToggle.addEventListener("click", () => {
-  setLanguage(state.language === "zh" ? "en" : "zh");
-});
+els.themeToggle.addEventListener("click", () => setTheme(state.theme === "dark" ? "light" : "dark"));
+els.languageToggle.addEventListener("click", () => setLanguage(state.language === "zh" ? "en" : "zh"));
 els.refreshChannels.addEventListener("click", loadChannels);
 els.refreshDevices.addEventListener("click", loadVoiceDevices);
 els.voiceRecord.addEventListener("click", transcribeVoice);
-els.navItems.forEach((item) => {
-  item.addEventListener("click", () => {
-    els.navItems.forEach((node) => node.classList.remove("is-active"));
-    item.classList.add("is-active");
-    const target = document.getElementById(item.dataset.section);
-    if (target) {
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  });
-});
 
+bindNavigation();
 setTheme(state.theme);
 setLanguage(state.language);
 setScreenshot("");
-setResultCard(t("noResult"), t("resultSeed"));
-setVoiceResult(t("noVoice"), t("voice_empty_body"));
+setResultCard(t("result_empty_title"), t("result_empty_body"));
+setVoiceResult(t("voice_empty_title"), t("voice_empty_body"));
 loadChannels();
 loadVoiceDevices();
-logLine("Boot", t("boot"));
+logLine(t("bootTitle"), t("boot"));

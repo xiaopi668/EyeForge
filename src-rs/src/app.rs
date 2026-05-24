@@ -1,13 +1,14 @@
 use iced::alignment::Horizontal;
 use iced::widget::{
-    button, checkbox, column, container, horizontal_rule, pick_list, row, scrollable, text,
+    button, checkbox, column, container, horizontal_rule, image, pick_list, row, scrollable, text,
     text_input,
 };
-use iced::{Alignment, Background, Border, Color, Element, Fill, Length, Task, Theme};
+use iced::{Alignment, Background, Border, Color, ContentFit, Element, Fill, Length, Task, Theme};
 
 use crate::config::{Config, EditableConfig};
 use crate::runtime::{self, NativeOutcome};
 use crate::server;
+use crate::wechat::{QrLoginResult, QrLoginSession};
 
 const VERSION: &str = "1.5.0-beta.2";
 
@@ -15,6 +16,8 @@ const VERSION: &str = "1.5.0-beta.2";
 pub enum Page {
     Home,
     Settings,
+    Skills,
+    AiGroups,
 }
 
 impl Default for Page {
@@ -221,7 +224,6 @@ pub enum TextField {
     HotkeyFloat,
     HotkeyVoice,
     WakewordList,
-    PorcupineKey,
     WsHost,
     WsPort,
     WsToken,
@@ -238,6 +240,14 @@ pub enum TextField {
     QqWsPort,
     QqBotAppId,
     QqBotToken,
+    SkillsEnabled,
+    AiGroupStrategy,
+    AiGroupOpenclawMembers,
+    AiGroupAstrbotMembers,
+    AiGroupHapiEndpoint,
+    AiGroupOpencodeMembers,
+    AiGroupCodexMembers,
+    AiGroupClaudeCodeMembers,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,6 +259,7 @@ pub enum BoolField {
     DtEnabled,
     QqEnabled,
     VisionEnabled,
+    AiGroupsEnabled,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -274,6 +285,9 @@ pub enum Message {
     LanguageSelected(Language),
     ThemeSelected(ThemeMode),
     QqModeSelected(QqMode),
+    WechatQrLogin,
+    WechatQrReady(Result<QrLoginSession, String>),
+    WechatQrLoginFinished(Result<QrLoginResult, String>),
     TextChanged(TextField, String),
     BoolChanged(BoolField, bool),
     SaveSettings,
@@ -292,6 +306,9 @@ pub struct EyeForge {
     latest_result: Option<String>,
     logs: Vec<LogEntry>,
     task_running: bool,
+    wechat_login_running: bool,
+    wechat_qr_image: Option<image::Handle>,
+    wechat_qr_status: Option<String>,
 }
 
 impl Default for EyeForge {
@@ -315,6 +332,9 @@ impl Default for EyeForge {
             latest_result: None,
             logs: Vec::new(),
             task_running: false,
+            wechat_login_running: false,
+            wechat_qr_image: None,
+            wechat_qr_status: None,
         }
     }
 }
@@ -342,6 +362,9 @@ impl EyeForge {
             latest_result: None,
             logs: Vec::new(),
             task_running: false,
+            wechat_login_running: false,
+            wechat_qr_image: None,
+            wechat_qr_status: None,
         };
 
         let gateway_status = server::restart(&app.config);
@@ -349,16 +372,54 @@ impl EyeForge {
             LogKind::Info,
             if language.is_zh() { "启动" } else { "Boot" },
             match gateway_status {
-                Ok(_) => format!(
-                    "Rust gateway listening on http://127.0.0.1:{}/ and ws://127.0.0.1:{}/ws",
-                    crate::server::GATEWAY_PORT,
-                    crate::server::GATEWAY_PORT
+                Ok(_) if app.config.ws_enabled => format!(
+                    "Rust gateway starting on http://{}:{}/ and ws://{}:{}/ws",
+                    ws_host, app.config.ws_port, ws_host, app.config.ws_port
                 ),
+                Ok(_) => app
+                    .t(
+                        "设置中已禁用 Rust 网关",
+                        "Rust gateway is disabled in settings",
+                    )
+                    .to_string(),
                 Err(error) => format!(
                     "Rust gateway failed to start on {}:{}: {error}",
-                    ws_host,
-                    crate::server::GATEWAY_PORT
+                    ws_host, app.config.ws_port
                 ),
+            },
+        );
+
+        let wakeword_status = crate::wakeword::restart(&app.config);
+        app.push_log(
+            match wakeword_status {
+                Ok(_) => LogKind::Info,
+                Err(_) => LogKind::Error,
+            },
+            if language.is_zh() {
+                "语音唤醒"
+            } else {
+                "Wake Word"
+            },
+            match wakeword_status {
+                Ok(message) => message,
+                Err(error) => error,
+            },
+        );
+
+        let ai_groups_status = crate::ai_groups::restart(&app.config);
+        app.push_log(
+            match ai_groups_status {
+                Ok(_) => LogKind::Info,
+                Err(_) => LogKind::Error,
+            },
+            if language.is_zh() {
+                "AI 群组"
+            } else {
+                "AI Groups"
+            },
+            match ai_groups_status {
+                Ok(message) => message,
+                Err(error) => error,
             },
         );
 
@@ -414,6 +475,114 @@ impl EyeForge {
             Message::QqModeSelected(mode) => {
                 self.settings.qq_mode = mode.as_config_value().to_string();
             }
+            Message::WechatQrLogin => {
+                if self.wechat_login_running {
+                    return Task::none();
+                }
+
+                self.wechat_login_running = true;
+                self.wechat_qr_image = None;
+                self.wechat_qr_status = Some(
+                    self.t("正在获取二维码，请稍候...", "Requesting the QR code...")
+                        .to_string(),
+                );
+                self.status_text = if self.language().is_zh() {
+                    "正在获取微信二维码...".into()
+                } else {
+                    "Requesting the WeChat QR code...".into()
+                };
+                self.push_log(
+                    LogKind::Info,
+                    self.t("微信 iLink", "WeChat iLink"),
+                    self.t(
+                        "二维码会直接显示在设置页中，请使用微信扫码并在手机上确认。",
+                        "The QR code will be shown in the settings page. Scan it with WeChat and confirm on your phone.",
+                    ),
+                );
+                return Task::perform(crate::wechat::begin_qr_login(), Message::WechatQrReady);
+            }
+            Message::WechatQrReady(result) => match result {
+                Ok(session) => {
+                    let key = session.key.clone();
+                    self.wechat_qr_image = Some(image::Handle::from_bytes(session.image_bytes));
+                    self.wechat_qr_status = Some(
+                        self.t(
+                            "请使用微信扫码，然后在手机上确认登录。",
+                            "Scan the QR code with WeChat and confirm the login on your phone.",
+                        )
+                        .to_string(),
+                    );
+                    self.status_text = self
+                        .t(
+                            "二维码已就绪，请扫码确认。",
+                            "The QR code is ready. Scan it to continue.",
+                        )
+                        .to_string();
+                    return Task::perform(
+                        async move { crate::wechat::wait_for_qr_confirmation(&key).await },
+                        Message::WechatQrLoginFinished,
+                    );
+                }
+                Err(error) => {
+                    self.wechat_login_running = false;
+                    self.wechat_qr_status = Some(error.clone());
+                    self.status_text = if self.language().is_zh() {
+                        format!("获取微信二维码失败: {error}")
+                    } else {
+                        format!("Failed to get the WeChat QR code: {error}")
+                    };
+                    self.push_log(LogKind::Error, self.t("微信 iLink", "WeChat iLink"), error);
+                }
+            },
+            Message::WechatQrLoginFinished(result) => {
+                self.wechat_login_running = false;
+
+                match result {
+                    Ok(login) => {
+                        self.settings.wc_token = login.token;
+                        self.wechat_qr_status = Some(
+                            self.t(
+                                "登录成功，Token 已自动填入。",
+                                "Login succeeded and the token was filled in automatically.",
+                            )
+                            .to_string(),
+                        );
+                        self.status_text = if self.language().is_zh() {
+                            "微信扫码登录成功，Token 已自动填入".into()
+                        } else {
+                            "WeChat QR login succeeded and the token was filled in automatically"
+                                .into()
+                        };
+                        self.push_log(
+                            LogKind::Success,
+                            self.t("微信 iLink", "WeChat iLink"),
+                            format!(
+                                "{} Bot ID: {} | User ID: {}",
+                                self.t("登录成功。", "Login succeeded."),
+                                if login.bot_id.is_empty() {
+                                    self.t("(空)", "(empty)")
+                                } else {
+                                    login.bot_id.as_str()
+                                },
+                                if login.user_id.is_empty() {
+                                    self.t("(空)", "(empty)")
+                                } else {
+                                    login.user_id.as_str()
+                                }
+                            ),
+                        );
+                    }
+                    Err(error) => {
+                        self.wechat_qr_status = Some(error.clone());
+                        self.status_text = if self.language().is_zh() {
+                            format!("微信扫码登录失败: {error}")
+                        } else {
+                            format!("WeChat QR login failed: {error}")
+                        };
+                        self.push_log(LogKind::Error, self.t("微信 iLink", "WeChat iLink"), error);
+                    }
+                }
+            }
             Message::TextChanged(field, value) => self.update_text_field(field, value),
             Message::BoolChanged(field, value) => self.update_bool_field(field, value),
             Message::SaveSettings => {
@@ -448,10 +617,39 @@ impl EyeForge {
                     },
                     "Gateway",
                     match restart_result {
-                        Ok(_) => format!(
-                            "Rust gateway ready on http://127.0.0.1:{}/",
-                            crate::server::GATEWAY_PORT
+                        Ok(_) if self.config.ws_enabled => format!(
+                            "Rust gateway configured for http://{}:{}/",
+                            self.config.ws_host, self.config.ws_port
                         ),
+                        Ok(_) => self
+                            .t("Rust 网关已禁用", "Rust gateway disabled")
+                            .to_string(),
+                        Err(error) => error,
+                    },
+                );
+
+                let wakeword_result = crate::wakeword::restart(&self.config);
+                self.push_log(
+                    match wakeword_result {
+                        Ok(_) => LogKind::Info,
+                        Err(_) => LogKind::Error,
+                    },
+                    self.t("语音唤醒", "Wake Word"),
+                    match wakeword_result {
+                        Ok(message) => message,
+                        Err(error) => error,
+                    },
+                );
+
+                let ai_groups_result = crate::ai_groups::restart(&self.config);
+                self.push_log(
+                    match ai_groups_result {
+                        Ok(_) => LogKind::Info,
+                        Err(_) => LogKind::Error,
+                    },
+                    self.t("AI 群组", "AI Groups"),
+                    match ai_groups_result {
+                        Ok(message) => message,
                         Err(error) => error,
                     },
                 );
@@ -524,7 +722,7 @@ impl EyeForge {
                         };
 
                         for line in outcome.transcript {
-                            self.push_log(LogKind::Info, "Runtime", line);
+                            self.push_log(LogKind::Info, self.t("运行时", "Runtime"), line);
                         }
                         self.push_log(
                             if ok { LogKind::Success } else { LogKind::Error },
@@ -565,14 +763,24 @@ impl EyeForge {
 
         let navigation = column![
             nav_button(
-                self.t("Home", "Home"),
+                self.t("首页", "Home"),
                 self.current_page == Page::Home,
                 Page::Home
             ),
             nav_button(
-                self.t("Settings", "Settings"),
+                self.t("设置", "Settings"),
                 self.current_page == Page::Settings,
                 Page::Settings
+            ),
+            nav_button(
+                self.t("Skill", "Skills"),
+                self.current_page == Page::Skills,
+                Page::Skills
+            ),
+            nav_button(
+                self.t("AI 群组", "AI Groups"),
+                self.current_page == Page::AiGroups,
+                Page::AiGroups
             ),
         ]
         .spacing(8)
@@ -590,7 +798,9 @@ impl EyeForge {
                 text(format!("v{VERSION}"))
                     .size(12)
                     .color(self.muted_text_color()),
-                text("Rust Native").size(12).color(self.muted_text_color()),
+                text(self.t("Rust 原生", "Rust Native"))
+                    .size(12)
+                    .color(self.muted_text_color()),
             ]
             .spacing(18)
             .padding([22, 18])
@@ -603,6 +813,8 @@ impl EyeForge {
         let content = match self.current_page {
             Page::Home => self.home_page(),
             Page::Settings => self.settings_page(),
+            Page::Skills => self.skills_page(),
+            Page::AiGroups => self.ai_groups_page(),
         };
 
         row![rail, content].width(Fill).height(Fill).into()
@@ -627,7 +839,11 @@ impl EyeForge {
         .padding(24)
         .style(hero_style);
 
-        let bridge_target = format!("http://127.0.0.1:{}/", crate::server::GATEWAY_PORT);
+        let bridge_target = if self.config.ws_enabled {
+            format!("http://{}:{}/", self.config.ws_host, self.config.ws_port)
+        } else {
+            self.t("网关已禁用", "Gateway disabled").to_string()
+        };
         let provider_name = Provider::from_config_value(&self.settings.llm_provider).to_string();
 
         let stats = row![
@@ -643,7 +859,11 @@ impl EyeForge {
             ),
             metric_card(
                 self.t("Gateway", "Gateway"),
-                self.t("固定开放", "Always on"),
+                if self.config.ws_enabled {
+                    self.t("已启用", "Enabled")
+                } else {
+                    self.t("已禁用", "Disabled")
+                },
                 bridge_target.as_str(),
                 self.theme(),
             ),
@@ -836,9 +1056,12 @@ impl EyeForge {
         );
 
         container(
-            row![settings_nav, container(content).width(Fill)]
-                .spacing(18)
-                .padding([20, 24]),
+            row![
+                settings_nav,
+                scrollable(container(content).width(Fill)).height(Fill)
+            ]
+            .spacing(18)
+            .padding([20, 24]),
         )
         .width(Fill)
         .height(Fill)
@@ -987,17 +1210,17 @@ impl EyeForge {
                 .on_toggle(|value| Message::BoolChanged(BoolField::WakewordEnabled, value))
                 .into(),
                 field_row(
-                    self.t("唤醒词列表", "Wake Words"),
-                    plain_input("", &self.settings.wakeword_list, TextField::WakewordList),
+                    self.t("Rustpotter 模型文件", "Rustpotter Model Files"),
+                    plain_input("C:\\wakewords\\eyeforge.rpw", &self.settings.wakeword_list, TextField::WakewordList),
                 ),
-                field_row(
-                    self.t("Picovoice AccessKey", "Picovoice AccessKey"),
-                    secure_input(
-                        "",
-                        &self.settings.porcupine_access_key,
-                        TextField::PorcupineKey
+                helper_text(
+                    self.t(
+                        "使用逗号分隔多个 Rustpotter .rpw 模型/参考文件路径；不再需要 Picovoice AccessKey 或 Porcupine 动态库。",
+                        "Use comma-separated Rustpotter .rpw model/reference file paths. Picovoice AccessKey and Porcupine libraries are no longer required."
                     ),
-                ),
+                    self.theme()
+                )
+                .into(),
             ]),
         ]
         .spacing(14)
@@ -1006,6 +1229,41 @@ impl EyeForge {
 
     fn channels_section(&self) -> Element<'_, Message> {
         let qq_mode = QqMode::from_config_value(&self.settings.qq_mode);
+        let wechat_qr_panel: Element<'_, Message> =
+            if let Some(handle) = self.wechat_qr_image.clone() {
+                container(
+                    column![
+                        text(self.t("微信登录二维码", "WeChat Login QR Code"))
+                            .size(14)
+                            .color(self.accent_color()),
+                        image(handle)
+                            .width(220)
+                            .height(220)
+                            .content_fit(ContentFit::Contain),
+                        text(
+                            self.wechat_qr_status
+                                .as_deref()
+                                .unwrap_or(self.t("请扫码", "Please scan the QR code")),
+                        )
+                        .size(13)
+                        .color(self.secondary_text_color()),
+                    ]
+                    .spacing(12)
+                    .align_x(Alignment::Center),
+                )
+                .padding(16)
+                .style(feature_surface_style)
+                .width(Fill)
+                .into()
+            } else {
+                text(self.wechat_qr_status.as_deref().unwrap_or(self.t(
+                    "点击“扫码登录”后，这里会显示二维码。",
+                    "The QR code will appear here after you click QR Login.",
+                )))
+                .size(13)
+                .color(self.secondary_text_color())
+                .into()
+            };
 
         column![
             section_title(
@@ -1038,6 +1296,26 @@ impl EyeForge {
                     checkbox(self.t("启用", "Enabled"), self.settings.wc_enabled)
                         .on_toggle(|value| Message::BoolChanged(BoolField::WcEnabled, value))
                         .into(),
+                    helper_text(self.t(
+                        "原来的扫码登录流程还没迁移完，当前先保留按钮和 Token 配置入口。",
+                        "The original QR login flow is not fully migrated yet. For now, the UI keeps both the button and the token field.",
+                    ), self.theme()),
+                    row![
+                        button(text(self.t("扫码登录", "QR Login")).size(14))
+                            .padding([10, 16])
+                            .style(subtle_button_style)
+                            .on_press_maybe((!self.wechat_login_running).then_some(Message::WechatQrLogin)),
+                        text(self.t(
+                            "如果你之前依赖扫码登录，这里会继续保留入口。",
+                            "If you previously relied on QR login, the entry point stays here.",
+                        ))
+                        .size(13)
+                        .color(self.secondary_text_color()),
+                    ]
+                    .spacing(12)
+                    .align_y(Alignment::Center)
+                    .into(),
+                    wechat_qr_panel,
                     field_row(
                         self.t("Bot Token", "Bot Token"),
                         secure_input("", &self.settings.wc_token, TextField::WcToken),
@@ -1050,6 +1328,10 @@ impl EyeForge {
                     checkbox(self.t("启用", "Enabled"), self.settings.wcom_enabled)
                         .on_toggle(|value| Message::BoolChanged(BoolField::WcomEnabled, value))
                         .into(),
+                    helper_text(self.t(
+                        "企业微信需要完整的回调配置，不只是开关。下面这些字段都会保存进共享配置。",
+                        "WeCom needs a full callback configuration, not just the toggle. All fields below are saved into the shared config.",
+                    ), self.theme()),
                     field_row(
                         self.t("Corp ID", "Corp ID"),
                         plain_input("", &self.settings.wcom_corp_id, TextField::WcomCorpId),
@@ -1078,6 +1360,10 @@ impl EyeForge {
                     checkbox(self.t("启用", "Enabled"), self.settings.dt_enabled)
                         .on_toggle(|value| Message::BoolChanged(BoolField::DtEnabled, value))
                         .into(),
+                    helper_text(self.t(
+                        "钉钉至少需要 App Key、App Secret 和 Webhook。",
+                        "DingTalk needs at least the App Key, App Secret, and Webhook.",
+                    ), self.theme()),
                     field_row(
                         self.t("App Key", "App Key"),
                         plain_input("", &self.settings.dt_app_key, TextField::DtAppKey),
@@ -1098,29 +1384,457 @@ impl EyeForge {
                     checkbox(self.t("启用", "Enabled"), self.settings.qq_enabled)
                         .on_toggle(|value| Message::BoolChanged(BoolField::QqEnabled, value))
                         .into(),
+                    helper_text(self.t(
+                        "QQ 支持 go-cqhttp 反向 WebSocket 和 QQ Official Bot 两种模式。",
+                        "QQ supports both go-cqhttp reverse WebSocket and QQ Official Bot mode.",
+                    ), self.theme()),
                     field_row(
                         self.t("模式", "Mode"),
                         pick_list(QqMode::ALL, Some(qq_mode), Message::QqModeSelected)
                             .width(240)
                             .into(),
                     ),
-                    field_row(
-                        self.t("WebSocket 地址", "WebSocket Host"),
-                        plain_input("", &self.settings.qq_ws_host, TextField::QqWsHost),
+                    if qq_mode == QqMode::WebSocket {
+                        field_row(
+                            self.t("WebSocket 地址", "WebSocket Host"),
+                            plain_input("", &self.settings.qq_ws_host, TextField::QqWsHost),
+                        )
+                    } else {
+                        field_row(
+                            self.t("Bot AppID", "Bot AppID"),
+                            plain_input("", &self.settings.qq_bot_appid, TextField::QqBotAppId),
+                        )
+                    },
+                    if qq_mode == QqMode::WebSocket {
+                        field_row(
+                            self.t("WebSocket 端口", "WebSocket Port"),
+                            number_input("6700", &self.settings.qq_ws_port, TextField::QqWsPort),
+                        )
+                    } else {
+                        field_row(
+                            self.t("Bot Token", "Bot Token"),
+                            secure_input("", &self.settings.qq_bot_token, TextField::QqBotToken),
+                        )
+                    },
+                ]
+            ),
+        ]
+        .spacing(14)
+        .into()
+    }
+
+    fn skills_page(&self) -> Element<'_, Message> {
+        container(scrollable(container(self.skills_section()).width(Fill)).height(Fill))
+            .width(Fill)
+            .height(Fill)
+            .padding([20, 24])
+            .into()
+    }
+
+    fn skills_section(&self) -> Element<'_, Message> {
+        column![
+            section_title(self.t("Skill 设置", "Skill Settings"), self.theme()),
+            provider_form(vec![
+                helper_text(self.t(
+                    "这里填写启用的 Skill 名称，多个用逗号分隔。示例: browser, shell, planner",
+                    "Enter enabled skill names here, separated by commas. Example: browser, shell, planner",
+                ), self.theme()),
+                field_row(
+                    self.t("启用列表", "Enabled Skills"),
+                    plain_input("browser, shell", &self.settings.skills_enabled, TextField::SkillsEnabled),
+                ),
+                helper_text(self.t(
+                    "保留了原先 Skill 功能的配置入口。后续可继续接技能目录扫描、导入和开关。",
+                    "This keeps the original Skill feature entry point. Directory scanning, import, and per-skill toggles can be connected next.",
+                ), self.theme()),
+            ]),
+        ]
+        .spacing(14)
+        .into()
+    }
+
+    fn ai_groups_page(&self) -> Element<'_, Message> {
+        container(container(self.ai_group_console()).width(Fill).height(Fill))
+            .width(Fill)
+            .height(Fill)
+            .padding([20, 24])
+            .into()
+    }
+
+    fn ai_group_console(&self) -> Element<'_, Message> {
+        let member_count = self.ai_group_member_count();
+        let group_name = self.t("龙虾群", "Dragon Group");
+
+        let summary = row![
+            column![
+                text(group_name).size(28).color(self.primary_text_color()),
+                text(self.t(
+                    "协助负责人完成日常任务",
+                    "Coordinate daily work across specialized agents",
+                ))
+                .size(15)
+                .color(self.secondary_text_color()),
+            ]
+            .spacing(6)
+            .width(Fill),
+            info_pill(
+                self.t("成员", "People"),
+                format!("{}", member_count.max(5)),
+                self.theme(),
+            ),
+            info_pill(
+                self.t("状态", "Status"),
+                if self.settings.ai_groups_enabled {
+                    self.t("在线", "online")
+                } else {
+                    self.t("未启用", "disabled")
+                },
+                self.theme(),
+            ),
+        ]
+        .spacing(12)
+        .align_y(Alignment::Center);
+
+        let chat_feed = column![
+            ai_chat_message(
+                "Kimi",
+                self.t("协调者", "Coordinator"),
+                self.t(
+                    "收到，资料归档、信息搜集、研究报告这几块我记下了。角色定位存好，随时待命。",
+                    "I have the archive, collection, and research-report duties noted. Role memory is ready.",
+                ),
+                self.theme(),
+            ),
+            ai_chat_message(
+                "Claw-Scripte",
+                self.t("脚本专家", "Script Specialist"),
+                self.t(
+                    "欢迎来到 AI 群组。你可以先熟悉沟通规则，后续任务会按角色进入对应成员。",
+                    "Welcome to the AI group. Tasks can be routed into the right member by role.",
+                ),
+                self.theme(),
+            ),
+            ai_chat_message(
+                "Moonwalker1188",
+                self.t("群主", "Owner"),
+                self.t(
+                    "这里专门协助日常任务。可以上传文件、丢一个目标、或者直接 @ 某个成员开始协作。",
+                    "This room coordinates daily work. Drop a file, describe a goal, or mention a member to collaborate.",
+                ),
+                self.theme(),
+            ),
+            ai_chat_message(
+                "Codex",
+                self.t("代码执行", "Code Implementer"),
+                self.t(
+                    "我负责实现、调试和验证。需要改项目时可以直接分配给我。",
+                    "I handle implementation, debugging, and verification when the project needs changes.",
+                ),
+                self.theme(),
+            ),
+        ]
+        .spacing(16);
+
+        let composer = container(
+            row![
+                text("+").size(24).color(self.accent_color()),
+                text(self.t(
+                    "@多个 Claw，马上开始协作",
+                    "Mention multiple Claws to start collaboration",
+                ))
+                .size(15)
+                .color(self.secondary_text_color())
+                .width(Fill),
+                text(self.t("通过 hapi 调度", "hapi dispatch"))
+                    .size(13)
+                    .color(self.muted_text_color()),
+            ]
+            .spacing(12)
+            .align_y(Alignment::Center),
+        )
+        .padding([14, 16])
+        .style(feature_surface_style);
+
+        let chat_panel = container(
+            column![
+                summary,
+                horizontal_rule(1),
+                scrollable(chat_feed).height(Fill),
+                composer
+            ]
+            .spacing(18)
+            .height(Fill),
+        )
+        .padding(22)
+        .style(panel_style)
+        .height(Fill)
+        .width(Length::FillPortion(2));
+
+        let people = column![
+            member_card(
+                "Moonwalker1455",
+                self.t("群主", "Owner"),
+                self.t("真人", "Member"),
+                self.theme(),
+            ),
+            member_card(
+                "Moonwalker1456",
+                self.t("成员", "Member"),
+                self.t("可聊天", "Available"),
+                self.theme(),
+            ),
+            member_card(
+                "Moonwalker1187",
+                self.t("成员", "Member"),
+                self.t("可聊天", "Available"),
+                self.theme(),
+            ),
+        ]
+        .spacing(10);
+
+        let claws = column![
+            member_card("Kimi", self.t("协调者", "Coordinator"), "47", self.theme()),
+            member_card(
+                "Claw-Scripte",
+                self.t("脚本专家", "Script Specialist"),
+                "47",
+                self.theme(),
+            ),
+            member_card(
+                "Claw-Archiv",
+                self.t("资料归档", "Research Archivist"),
+                "47",
+                self.theme(),
+            ),
+            member_card(
+                "Codex",
+                self.t("代码执行", "Code Implementer"),
+                "47",
+                self.theme(),
+            ),
+        ]
+        .spacing(10);
+
+        let settings_panel = container(
+            scrollable(
+                column![
+                    text(self.t("群聊设置", "Group Settings"))
+                        .size(22)
+                        .color(self.primary_text_color()),
+                    text(self.t(
+                        "AI 群组像工作群一样协调多个专长代理，把任务分发给规划、编码、审查和归档角色。",
+                        "The AI group coordinates specialized agents like a work chat. Route tasks to planner, coder, reviewer, and archive roles without leaving EyeForge.",
+                    ))
+                    .size(14)
+                    .color(self.secondary_text_color()),
+                    row![
+                        action_tile(self.t("邀请成员", "Invite Member"), "people", self.theme()),
+                        action_tile(self.t("添加 Claw", "Add Claw"), "+", self.theme()),
+                        action_tile(self.t("编辑群信息", "Edit Group"), "edit", self.theme()),
+                    ]
+                    .spacing(10),
+                    text(self.t("成员", "People")).size(16).color(self.primary_text_color()),
+                    people,
+                    text(self.t("Claw", "Claw")).size(16).color(self.primary_text_color()),
+                    claws,
+                    provider_form(vec![
+                        checkbox(self.t("启用 AI 群组", "Enable AI Groups"), self.settings.ai_groups_enabled)
+                            .on_toggle(|value| Message::BoolChanged(BoolField::AiGroupsEnabled, value))
+                            .into(),
+                        field_row(
+                            self.t("HAPI 入口", "HAPI Endpoint"),
+                            plain_input(
+                                "http://127.0.0.1:8766",
+                                &self.settings.ai_group_hapi_endpoint,
+                                TextField::AiGroupHapiEndpoint,
+                            ),
+                        ),
+                        field_row(
+                            self.t("调度策略", "Dispatch Strategy"),
+                            plain_input(
+                                "broadcast / primary / fallback",
+                                &self.settings.ai_group_strategy,
+                                TextField::AiGroupStrategy,
+                            ),
+                        ),
+                    ]),
+                    helper_text(
+                        self.t(
+                            "每行一个成员，格式：名称 | 角色 | hapi-endpoint\n示例：opencode-1 | coder | http://127.0.0.1:9101",
+                            "One member per line, format: name | role | hapi-endpoint\nExample: opencode-1 | coder | http://127.0.0.1:9101",
+                        ),
+                        self.theme(),
                     ),
-                    field_row(
-                        self.t("WebSocket 端口", "WebSocket Port"),
-                        number_input("6700", &self.settings.qq_ws_port, TextField::QqWsPort),
+                    channel_block(
+                        "OpenClaw",
+                        vec![field_row(
+                            self.t("成员列表", "Members"),
+                            multiline_input(
+                                "claw-1 | planner | ws://127.0.0.1:3000",
+                                &self.settings.ai_group_openclaw_members,
+                                TextField::AiGroupOpenclawMembers,
+                                120,
+                            ),
+                        )],
                     ),
-                    field_row(
-                        self.t("Bot AppID", "Bot AppID"),
-                        plain_input("", &self.settings.qq_bot_appid, TextField::QqBotAppId),
+                    channel_block(
+                        "AstrBot",
+                        vec![field_row(
+                            self.t("成员列表", "Members"),
+                            multiline_input(
+                                "astr-1 | reviewer | ws://127.0.0.1:6185",
+                                &self.settings.ai_group_astrbot_members,
+                                TextField::AiGroupAstrbotMembers,
+                                120,
+                            ),
+                        )],
                     ),
-                    field_row(
-                        self.t("Bot Token", "Bot Token"),
-                        secure_input("", &self.settings.qq_bot_token, TextField::QqBotToken),
+                    channel_block(
+                        "OpenCode",
+                        vec![field_row(
+                            self.t("成员列表", "Members"),
+                            multiline_input(
+                                "opencode-1 | coder | http://127.0.0.1:9101",
+                                &self.settings.ai_group_opencode_members,
+                                TextField::AiGroupOpencodeMembers,
+                                120,
+                            ),
+                        )],
+                    ),
+                    channel_block(
+                        "Codex",
+                        vec![field_row(
+                            self.t("成员列表", "Members"),
+                            multiline_input(
+                                "codex-1 | implementer | http://127.0.0.1:9102",
+                                &self.settings.ai_group_codex_members,
+                                TextField::AiGroupCodexMembers,
+                                120,
+                            ),
+                        )],
+                    ),
+                    channel_block(
+                        "Claude Code",
+                        vec![field_row(
+                            self.t("成员列表", "Members"),
+                            multiline_input(
+                                "claude-1 | reviewer | http://127.0.0.1:9103",
+                                &self.settings.ai_group_claude_code_members,
+                                TextField::AiGroupClaudeCodeMembers,
+                                120,
+                            ),
+                        )],
                     ),
                 ]
+                .spacing(16),
+            )
+            .height(Fill),
+        )
+        .padding(22)
+        .style(panel_style)
+        .height(Fill)
+        .width(Length::Fixed(380.0));
+
+        row![chat_panel, settings_panel]
+            .spacing(16)
+            .height(Fill)
+            .into()
+    }
+
+    #[allow(dead_code)]
+    fn ai_groups_section(&self) -> Element<'_, Message> {
+        column![
+            section_title(self.t("AI 群组", "AI Groups"), self.theme()),
+            provider_form(vec![
+                checkbox(self.t("启用 AI 群组", "Enable AI Groups"), self.settings.ai_groups_enabled)
+                    .on_toggle(|value| Message::BoolChanged(BoolField::AiGroupsEnabled, value))
+                    .into(),
+                helper_text(self.t(
+                    "AI 群组通过 hapi 连接 OpenClaw、AstrBot、OpenCode、Codex 和 Claude Code 成员。",
+                    "AI Groups connect OpenClaw, AstrBot, OpenCode, Codex, and Claude Code members through hapi.",
+                ), self.theme()),
+                field_row(
+                    self.t("HAPI 入口", "HAPI Endpoint"),
+                    plain_input("http://127.0.0.1:8766", &self.settings.ai_group_hapi_endpoint, TextField::AiGroupHapiEndpoint),
+                ),
+                field_row(
+                    self.t("调度策略", "Dispatch Strategy"),
+                    plain_input("broadcast / primary / fallback", &self.settings.ai_group_strategy, TextField::AiGroupStrategy),
+                ),
+                helper_text(self.t(
+                    "每行一个成员，格式：名称 | 角色 | hapi-endpoint\n例如：opencode-1 | coder | http://127.0.0.1:9101",
+                    "One member per line, format: name | role | hapi-endpoint\nExample: opencode-1 | coder | http://127.0.0.1:9101",
+                ), self.theme()),
+            ]),
+            channel_block(
+                self.t("OpenClaw", "OpenClaw"),
+                vec![
+                    field_row(
+                        self.t("成员列表", "Members"),
+                        multiline_input(
+                            "claw-1 | planner | ws://127.0.0.1:3000",
+                            &self.settings.ai_group_openclaw_members,
+                            TextField::AiGroupOpenclawMembers,
+                            140,
+                        ),
+                    ),
+                ],
+            ),
+            channel_block(
+                self.t("AstrBot", "AstrBot"),
+                vec![
+                    field_row(
+                        self.t("成员列表", "Members"),
+                        multiline_input(
+                            "astr-1 | reviewer | ws://127.0.0.1:6185",
+                            &self.settings.ai_group_astrbot_members,
+                            TextField::AiGroupAstrbotMembers,
+                            140,
+                        ),
+                    ),
+                ],
+            ),
+            channel_block(
+                self.t("OpenCode", "OpenCode"),
+                vec![
+                    field_row(
+                        self.t("成员列表", "Members"),
+                        multiline_input(
+                            "opencode-1 | coder | http://127.0.0.1:9101",
+                            &self.settings.ai_group_opencode_members,
+                            TextField::AiGroupOpencodeMembers,
+                            140,
+                        ),
+                    ),
+                ],
+            ),
+            channel_block(
+                self.t("Codex", "Codex"),
+                vec![
+                    field_row(
+                        self.t("成员列表", "Members"),
+                        multiline_input(
+                            "codex-1 | implementer | http://127.0.0.1:9102",
+                            &self.settings.ai_group_codex_members,
+                            TextField::AiGroupCodexMembers,
+                            140,
+                        ),
+                    ),
+                ],
+            ),
+            channel_block(
+                self.t("Claude Code", "Claude Code"),
+                vec![
+                    field_row(
+                        self.t("成员列表", "Members"),
+                        multiline_input(
+                            "claude-1 | reviewer | http://127.0.0.1:9103",
+                            &self.settings.ai_group_claude_code_members,
+                            TextField::AiGroupClaudeCodeMembers,
+                            140,
+                        ),
+                    ),
+                ],
             ),
         ]
         .spacing(14)
@@ -1149,8 +1863,21 @@ impl EyeForge {
         Language::from_config_value(&self.settings.language)
     }
 
-    fn t<'a>(&self, zh: &'a str, en: &'a str) -> &'a str {
-        let _ = zh;
+    fn ai_group_member_count(&self) -> usize {
+        [
+            self.settings.ai_group_openclaw_members.as_str(),
+            self.settings.ai_group_astrbot_members.as_str(),
+            self.settings.ai_group_opencode_members.as_str(),
+            self.settings.ai_group_codex_members.as_str(),
+            self.settings.ai_group_claude_code_members.as_str(),
+        ]
+        .iter()
+        .flat_map(|members| members.lines())
+        .filter(|line| !line.trim().is_empty())
+        .count()
+    }
+
+    fn t<'a>(&self, _zh: &'a str, en: &'a str) -> &'a str {
         if self.language().is_zh() {
             zh_text(en)
         } else {
@@ -1172,12 +1899,12 @@ impl EyeForge {
 
     fn secondary_text_color(&self) -> Color {
         let base = self.theme.extended_palette().background.base.text;
-        Color { a: 0.94, ..base }
+        Color { a: 0.98, ..base }
     }
 
     fn muted_text_color(&self) -> Color {
         let c = self.theme.extended_palette().background.base.text;
-        Color { a: 0.82, ..c }
+        Color { a: 0.92, ..c }
     }
 
     fn push_log(&mut self, kind: LogKind, title: impl Into<String>, detail: impl Into<String>) {
@@ -1232,7 +1959,6 @@ impl EyeForge {
             TextField::HotkeyFloat => self.settings.hotkey_float = value,
             TextField::HotkeyVoice => self.settings.hotkey_voice = value,
             TextField::WakewordList => self.settings.wakeword_list = value,
-            TextField::PorcupineKey => self.settings.porcupine_access_key = value,
             TextField::WsHost => self.settings.ws_host = value,
             TextField::WsPort => self.settings.ws_port = value,
             TextField::WsToken => self.settings.ws_token = value,
@@ -1249,6 +1975,16 @@ impl EyeForge {
             TextField::QqWsPort => self.settings.qq_ws_port = value,
             TextField::QqBotAppId => self.settings.qq_bot_appid = value,
             TextField::QqBotToken => self.settings.qq_bot_token = value,
+            TextField::SkillsEnabled => self.settings.skills_enabled = value,
+            TextField::AiGroupStrategy => self.settings.ai_group_strategy = value,
+            TextField::AiGroupOpenclawMembers => self.settings.ai_group_openclaw_members = value,
+            TextField::AiGroupAstrbotMembers => self.settings.ai_group_astrbot_members = value,
+            TextField::AiGroupHapiEndpoint => self.settings.ai_group_hapi_endpoint = value,
+            TextField::AiGroupOpencodeMembers => self.settings.ai_group_opencode_members = value,
+            TextField::AiGroupCodexMembers => self.settings.ai_group_codex_members = value,
+            TextField::AiGroupClaudeCodeMembers => {
+                self.settings.ai_group_claude_code_members = value
+            }
         }
     }
 
@@ -1261,6 +1997,7 @@ impl EyeForge {
             BoolField::DtEnabled => self.settings.dt_enabled = value,
             BoolField::QqEnabled => self.settings.qq_enabled = value,
             BoolField::VisionEnabled => self.config.use_vision = value,
+            BoolField::AiGroupsEnabled => self.settings.ai_groups_enabled = value,
         }
     }
 }
@@ -1292,7 +2029,138 @@ fn channel_block<'a>(title: &'a str, items: Vec<Element<'a, Message>>) -> Elemen
     container(column![text(title).size(16), column(items).spacing(12)].spacing(14))
         .padding(18)
         .style(feature_surface_style)
+        .width(Fill)
         .into()
+}
+
+fn ai_chat_message<'a>(
+    speaker: impl Into<String>,
+    role: impl Into<String>,
+    body: impl Into<String>,
+    theme: Theme,
+) -> Element<'a, Message> {
+    let speaker = speaker.into();
+    let role = role.into();
+    let body = body.into();
+    let text_color = theme.extended_palette().background.base.text;
+    let role_color = theme.extended_palette().primary.strong.color;
+
+    container(
+        row![
+            container(text(speaker.chars().next().unwrap_or('A').to_string()).size(18))
+                .width(42)
+                .height(42)
+                .center_x(Fill)
+                .center_y(Fill)
+                .style(|theme: &Theme| {
+                    let palette = theme.extended_palette();
+                    container::Style {
+                        background: Some(Background::Color(palette.primary.strong.color)),
+                        border: Border {
+                            radius: 21.0.into(),
+                            ..Border::default()
+                        },
+                        text_color: Some(palette.background.base.color),
+                        ..container::Style::default()
+                    }
+                }),
+            column![
+                row![
+                    text(speaker).size(15).color(text_color),
+                    text(role).size(13).color(role_color),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center),
+                text(body)
+                    .size(16)
+                    .line_height(iced::widget::text::LineHeight::Relative(1.45))
+                    .color(text_color),
+            ]
+            .spacing(6)
+            .width(Fill),
+        ]
+        .spacing(14),
+    )
+    .padding([10, 6])
+    .width(Fill)
+    .into()
+}
+
+fn action_tile<'a>(label: &'a str, mark: &'a str, theme: Theme) -> Element<'a, Message> {
+    container(
+        column![
+            text(mark)
+                .size(22)
+                .align_x(Horizontal::Center)
+                .color(theme.extended_palette().primary.strong.color),
+            text(label)
+                .size(13)
+                .align_x(Horizontal::Center)
+                .color(theme.extended_palette().background.base.text),
+        ]
+        .spacing(8)
+        .align_x(Alignment::Center),
+    )
+    .padding([14, 10])
+    .width(Length::FillPortion(1))
+    .style(feature_surface_style)
+    .into()
+}
+
+fn member_card<'a>(
+    name: impl Into<String>,
+    role: impl Into<String>,
+    status: impl Into<String>,
+    theme: Theme,
+) -> Element<'a, Message> {
+    let name = name.into();
+    let role = role.into();
+    let status = status.into();
+
+    container(
+        row![
+            container(text(name.chars().next().unwrap_or('A').to_string()).size(15))
+                .width(36)
+                .height(36)
+                .center_x(Fill)
+                .center_y(Fill)
+                .style(move |theme: &Theme| {
+                    let palette = theme.extended_palette();
+                    container::Style {
+                        background: Some(Background::Color(palette.primary.base.color)),
+                        border: Border {
+                            radius: 18.0.into(),
+                            ..Border::default()
+                        },
+                        text_color: Some(palette.background.base.color),
+                        ..container::Style::default()
+                    }
+                }),
+            column![
+                text(name)
+                    .size(14)
+                    .color(theme.extended_palette().background.base.text),
+                text(role)
+                    .size(12)
+                    .color(theme.extended_palette().background.base.text),
+            ]
+            .spacing(4)
+            .width(Fill),
+            text(status)
+                .size(12)
+                .color(theme.extended_palette().primary.strong.color),
+        ]
+        .spacing(12)
+        .align_y(Alignment::Center),
+    )
+    .padding(12)
+    .style(feature_surface_style)
+    .into()
+}
+
+fn helper_text<'a>(value: &'a str, theme: Theme) -> Element<'a, Message> {
+    let base = theme.extended_palette().background.base.text;
+    text(value).size(13).color(Color { a: 0.94, ..base }).into()
 }
 
 fn metric_card<'a>(
@@ -1324,7 +2192,13 @@ fn metric_card<'a>(
     .into()
 }
 
-fn info_pill<'a>(label: &'a str, value: &'a str, theme: Theme) -> Element<'a, Message> {
+fn info_pill<'a>(
+    label: impl Into<String>,
+    value: impl Into<String>,
+    theme: Theme,
+) -> Element<'a, Message> {
+    let label = label.into();
+    let value = value.into();
     container(
         row![
             text(label)
@@ -1404,6 +2278,20 @@ fn number_input<'a>(
         .into()
 }
 
+fn multiline_input<'a>(
+    placeholder: &'a str,
+    value: &'a str,
+    field: TextField,
+    _height: u16,
+) -> Element<'a, Message> {
+    text_input(placeholder, value)
+        .on_input(move |next| Message::TextChanged(field, next))
+        .padding(10)
+        .width(Fill)
+        .size(14)
+        .into()
+}
+
 fn field_row<'a>(label: &'a str, input: Element<'a, Message>) -> Element<'a, Message> {
     row![
         text(label).width(180).size(14).align_x(Horizontal::Left),
@@ -1450,18 +2338,26 @@ fn settings_tab_button<'a>(
 
 fn panel_style(theme: &Theme) -> container::Style {
     let palette = theme.extended_palette();
-    let bg = Color {
-        r: palette.background.weak.color.r * 0.88 + palette.background.base.color.r * 0.12,
-        g: palette.background.weak.color.g * 0.88 + palette.background.base.color.g * 0.12,
-        b: palette.background.weak.color.b * 0.88 + palette.background.base.color.b * 0.12,
-        a: 0.99,
+    let dark = palette.background.base.color.r
+        + palette.background.base.color.g
+        + palette.background.base.color.b
+        < 1.35;
+    let bg = if dark {
+        Color::from_rgb8(20, 28, 48)
+    } else {
+        Color::from_rgb8(255, 255, 255)
+    };
+    let border = if dark {
+        Color::from_rgb8(72, 92, 142)
+    } else {
+        Color::from_rgb8(199, 211, 234)
     };
     container::Style {
         background: Some(Background::Color(bg)),
         border: Border {
             width: 1.0,
             radius: 16.0.into(),
-            color: palette.primary.base.color,
+            color: border,
         },
         text_color: Some(palette.background.base.text),
         ..container::Style::default()
@@ -1470,16 +2366,26 @@ fn panel_style(theme: &Theme) -> container::Style {
 
 fn feature_surface_style(theme: &Theme) -> container::Style {
     let palette = theme.extended_palette();
-    let bg = Color {
-        a: 0.98,
-        ..palette.background.base.color
+    let dark = palette.background.base.color.r
+        + palette.background.base.color.g
+        + palette.background.base.color.b
+        < 1.35;
+    let bg = if dark {
+        Color::from_rgb8(28, 38, 62)
+    } else {
+        Color::from_rgb8(246, 249, 255)
+    };
+    let border = if dark {
+        Color::from_rgb8(83, 104, 156)
+    } else {
+        Color::from_rgb8(209, 219, 238)
     };
     container::Style {
         background: Some(Background::Color(bg)),
         border: Border {
             width: 1.0,
             radius: 14.0.into(),
-            color: palette.primary.weak.color,
+            color: border,
         },
         text_color: Some(palette.background.base.text),
         ..container::Style::default()
@@ -1488,11 +2394,19 @@ fn feature_surface_style(theme: &Theme) -> container::Style {
 
 fn hero_style(theme: &Theme) -> container::Style {
     let palette = theme.extended_palette();
-    let bg = Color {
-        r: palette.primary.strong.color.r * 0.35 + palette.background.base.color.r * 0.65,
-        g: palette.primary.strong.color.g * 0.35 + palette.background.base.color.g * 0.65,
-        b: palette.primary.strong.color.b * 0.35 + palette.background.base.color.b * 0.65,
-        a: 1.0,
+    let dark = palette.background.base.color.r
+        + palette.background.base.color.g
+        + palette.background.base.color.b
+        < 1.35;
+    let bg = if dark {
+        Color::from_rgb8(18, 36, 66)
+    } else {
+        Color::from_rgb8(238, 246, 255)
+    };
+    let border = if dark {
+        Color::from_rgb8(72, 133, 202)
+    } else {
+        Color::from_rgb8(160, 190, 230)
     };
 
     container::Style {
@@ -1500,7 +2414,7 @@ fn hero_style(theme: &Theme) -> container::Style {
         border: Border {
             width: 1.0,
             radius: 22.0.into(),
-            color: palette.primary.base.color,
+            color: border,
         },
         text_color: Some(palette.background.base.text),
         ..container::Style::default()
@@ -1509,11 +2423,14 @@ fn hero_style(theme: &Theme) -> container::Style {
 
 fn aside_style(theme: &Theme) -> container::Style {
     let palette = theme.extended_palette();
-    let bg = Color {
-        r: palette.background.base.color.r * 0.92,
-        g: palette.background.base.color.g * 0.96,
-        b: palette.background.base.color.b * 1.04,
-        a: 1.0,
+    let dark = palette.background.base.color.r
+        + palette.background.base.color.g
+        + palette.background.base.color.b
+        < 1.35;
+    let bg = if dark {
+        Color::from_rgb8(10, 15, 29)
+    } else {
+        Color::from_rgb8(242, 247, 255)
     };
 
     container::Style {
@@ -1576,68 +2493,75 @@ fn zh_text(english: &str) -> &str {
     match english {
         "Home" => "首页",
         "Settings" => "设置",
+        "Skills" => "技能",
+        "AI Groups" => "AI 群组",
         "Desktop Console" => "桌面控制台",
-        "Desktop Command Center" => "桌面主控台",
+        "Rust Native" => "Rust 原生",
+        "AI Screen Control Assistant" => "AI 屏幕操控助手",
+        "Desktop Command Center" => "桌面指挥中心",
+        "Run native actions, inspect live feedback, and keep the browser gateway ready on port 9178." => {
+            "执行原生动作、查看实时反馈，并保持 9178 浏览器网关在线。"
+        }
         "Execution State" => "执行状态",
         "Running" => "运行中",
         "Idle" => "空闲",
         "Gateway" => "网关",
-        "Always on" => "固定开放",
+        "Always on" => "常驻",
         "Current Model" => "当前模型",
         "Vision Preview" => "视觉预览",
         "Mode" => "模式",
-        "Vision enabled" => "视觉识别开启",
-        "Command only" => "命令模式",
+        "Vision enabled" => "视觉已开启",
+        "Command only" => "仅命令",
         "Entry" => "入口",
-        "Desktop + Web" => "桌面 + Web",
+        "Desktop + Web" => "桌面 + 网页",
         "Task Input" => "任务输入",
-        "This now runs through the Rust-native execution chain. `shell:` executes a local command, `wait:` delays, and other tasks enter the native backend placeholder flow." =>
-            "这里现在直接走 Rust 原生执行链。`shell:` 会执行本地命令，`wait:` 会做延时；其他任务会进入原生后端占位流程。",
-        "Ask AI to complete a desktop task..." => "让 AI 帮我完成一个桌面任务...",
-        "Launch" => "启动",
-        "Enable vision mode" => "启用视觉识别",
-        "No result yet" => "还没有收到结果",
-        "Execution Log" => "执行日志",
-        "AI Model" => "AI 模型",
-        "Capture" => "截图设置",
-        "General" => "常规设置",
-        "Channels" => "通道桥接",
-        "Settings Surface" => "设置面板",
-        "Live preview, save to persist" => "即时预览，保存持久化",
-        "Saving writes back into the shared Rust config shape and preserves unknown fields." =>
-            "保存时会写回现有 Rust 共享 config.json，并保留未知字段。",
-        "Save Settings" => "保存配置",
-        "Current Form" => "当前表单",
+        "Start" => "开始",
+        "Save Settings" => "保存设置",
+        "Activity Log" => "活动日志",
+        "No logs yet" => "暂无日志",
+        "Waiting for screenshot..." => "等待截图...",
+        "Screen recognition disabled" => "屏幕识别已关闭",
         "AI Model Settings" => "AI 模型设置",
-        "Provider" => "提供商",
-        "Model" => "模型",
-        "Base URL" => "基础地址",
         "Capture and Execution" => "截图与执行",
-        "Screenshot Quality" => "截图质量",
-        "Action Delay (sec)" => "动作延迟（秒）",
         "General Settings" => "常规设置",
-        "Language" => "语言",
-        "Theme" => "主题",
-        "Font Size" => "字体大小",
-        "Quick Input Hotkey" => "快捷悬浮窗",
-        "Voice Input Hotkey" => "语音输入热键",
-        "Enable Wake Word" => "启用唤醒词",
-        "Wake Words" => "唤醒词列表",
-        "Channel Bridge Settings" => "通道桥接设置",
+        "Channel Bridge" => "通道桥接",
         "WebSocket Gateway" => "WebSocket 网关",
-        "Enabled" => "启用",
-        "Host" => "地址",
-        "Port" => "端口",
-        "Token" => "令牌",
         "WeChat iLink" => "微信 iLink",
         "WeCom" => "企业微信",
         "DingTalk" => "钉钉",
         "QQ" => "QQ",
-        "WebSocket Host" => "WebSocket 地址",
-        "WebSocket Port" => "WebSocket 端口",
-        "Waiting for screenshot..." => "等待截图...",
-        "Screen recognition disabled" => "屏幕识别已关闭",
-        "No logs yet" => "还没有日志",
+        "Enable AI Groups" => "启用 AI 群组",
+        "HAPI Endpoint" => "HAPI 入口",
+        "Dispatch Strategy" => "调度策略",
+        "Members" => "成员列表",
+        "Group Settings" => "群聊设置",
+        "Invite Member" => "邀请成员",
+        "Add Claw" => "添加 Claw",
+        "Edit Group" => "编辑群信息",
+        "People" => "成员",
+        "Claw" => "Claw",
+        "Owner" => "群主",
+        "Member" => "真人",
+        "Available" => "可聊天",
+        "online" => "在线",
+        "messages" => "条消息",
+        "Coordinator" => "协调者",
+        "Script Specialist" => "脚本专家",
+        "Research Archivist" => "资料归档",
+        "Code Implementer" => "代码执行",
+        "Review Specialist" => "审查专家",
+        "The AI group coordinates specialized agents like a work chat. Route tasks to planner, coder, reviewer, and archive roles without leaving EyeForge." => {
+            "AI 群组像工作群一样协调多个专长代理，把任务分发给规划、编码、审查和归档角色。"
+        }
+        "Mention a member or broadcast to the group. The runtime will dispatch through the configured hapi endpoint." => {
+            "可以 @ 某个成员，也可以广播给全群；运行时会通过配置的 hapi 入口调度。"
+        }
+        "One member per line, format: name | role | hapi-endpoint\nExample: opencode-1 | coder | http://127.0.0.1:9101" => {
+            "每行一个成员，格式：名称 | 角色 | hapi-endpoint\n示例：opencode-1 | coder | http://127.0.0.1:9101"
+        }
+        "AI Groups connect OpenClaw, AstrBot, OpenCode, Codex, and Claude Code members through hapi." => {
+            "AI 群组通过 hapi 连接 OpenClaw、AstrBot、OpenCode、Codex 和 Claude Code 成员。"
+        }
         _ => english,
     }
 }

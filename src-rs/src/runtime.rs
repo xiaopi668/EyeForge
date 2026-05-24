@@ -12,6 +12,7 @@ use tokio::task::spawn_blocking;
 use tokio::time::{sleep, timeout, Duration};
 use xcap::{image::DynamicImage, image::ImageFormat, Monitor};
 
+use crate::ai_groups;
 use crate::config::Config;
 use crate::llm;
 
@@ -111,6 +112,26 @@ pub async fn execute_task(task: String, config: Config) -> Result<NativeOutcome,
             transcript,
             data: None,
         });
+    }
+
+    match ai_groups::dispatch_task(&config, &trimmed).await {
+        Ok(Some(ai_group_plan)) => {
+            transcript.push(format!("AI group hapi plan received:\n{ai_group_plan}"));
+            let actions = parse_action_specs(&ai_group_plan)?;
+            transcript.push(format!(
+                "Compiled AI group hapi plan into {} executable action(s)",
+                actions.len()
+            ));
+            return execute_action_plan(actions, &config, transcript).await;
+        }
+        Ok(None) => {
+            transcript.push("AI groups disabled or returned no plan; falling back to LLM".into());
+        }
+        Err(error) => {
+            transcript.push(format!(
+                "AI group hapi dispatch failed; falling back to LLM: {error}"
+            ));
+        }
     }
 
     transcript.push(format!(

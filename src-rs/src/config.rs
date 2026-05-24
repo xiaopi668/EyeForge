@@ -55,6 +55,10 @@ pub struct Config {
     #[serde(default)]
     pub porcupine_access_key: String,
     #[serde(default)]
+    pub porcupine_library_path: String,
+    #[serde(default)]
+    pub porcupine_model_path: String,
+    #[serde(default)]
     pub ws_enabled: bool,
     #[serde(default)]
     pub ws_host: String,
@@ -102,6 +106,22 @@ pub struct Config {
     pub use_vision: bool,
     #[serde(default)]
     pub skills_enabled: Vec<String>,
+    #[serde(default)]
+    pub ai_groups_enabled: bool,
+    #[serde(default)]
+    pub ai_group_strategy: String,
+    #[serde(default)]
+    pub ai_group_openclaw_members: String,
+    #[serde(default)]
+    pub ai_group_astrbot_members: String,
+    #[serde(default = "default_ai_group_hapi_endpoint")]
+    pub ai_group_hapi_endpoint: String,
+    #[serde(default)]
+    pub ai_group_opencode_members: String,
+    #[serde(default)]
+    pub ai_group_codex_members: String,
+    #[serde(default)]
+    pub ai_group_claude_code_members: String,
     #[serde(default, flatten)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -130,6 +150,8 @@ pub struct EditableConfig {
     pub wakeword_enabled: bool,
     pub wakeword_list: String,
     pub porcupine_access_key: String,
+    pub porcupine_library_path: String,
+    pub porcupine_model_path: String,
     pub ws_enabled: bool,
     pub ws_host: String,
     pub ws_port: String,
@@ -152,6 +174,15 @@ pub struct EditableConfig {
     pub qq_ws_port: String,
     pub qq_bot_appid: String,
     pub qq_bot_token: String,
+    pub skills_enabled: String,
+    pub ai_groups_enabled: bool,
+    pub ai_group_strategy: String,
+    pub ai_group_openclaw_members: String,
+    pub ai_group_astrbot_members: String,
+    pub ai_group_hapi_endpoint: String,
+    pub ai_group_opencode_members: String,
+    pub ai_group_codex_members: String,
+    pub ai_group_claude_code_members: String,
 }
 
 fn default_screenshot_quality() -> u32 {
@@ -184,6 +215,12 @@ fn default_qq_ws_port() -> u16 {
 fn default_use_vision() -> bool {
     true
 }
+fn default_ai_group_strategy() -> String {
+    "broadcast".into()
+}
+fn default_ai_group_hapi_endpoint() -> String {
+    "http://127.0.0.1:8766".into()
+}
 
 impl Default for Config {
     fn default() -> Self {
@@ -211,6 +248,8 @@ impl Default for Config {
             wakeword_enabled: false,
             wakeword_list: "computer".into(),
             porcupine_access_key: String::new(),
+            porcupine_library_path: String::new(),
+            porcupine_model_path: String::new(),
             ws_enabled: false,
             ws_host: "0.0.0.0".into(),
             ws_port: 8765,
@@ -235,6 +274,14 @@ impl Default for Config {
             qq_bot_token: String::new(),
             use_vision: true,
             skills_enabled: vec![],
+            ai_groups_enabled: false,
+            ai_group_strategy: default_ai_group_strategy(),
+            ai_group_openclaw_members: String::new(),
+            ai_group_astrbot_members: String::new(),
+            ai_group_hapi_endpoint: default_ai_group_hapi_endpoint(),
+            ai_group_opencode_members: String::new(),
+            ai_group_codex_members: String::new(),
+            ai_group_claude_code_members: String::new(),
             extra: BTreeMap::new(),
         }
     }
@@ -281,6 +328,8 @@ impl Config {
             wakeword_enabled: self.wakeword_enabled,
             wakeword_list: self.wakeword_list.clone(),
             porcupine_access_key: self.porcupine_access_key.clone(),
+            porcupine_library_path: self.porcupine_library_path.clone(),
+            porcupine_model_path: self.porcupine_model_path.clone(),
             ws_enabled: self.ws_enabled,
             ws_host: self.ws_host.clone(),
             ws_port: self.ws_port.to_string(),
@@ -303,6 +352,15 @@ impl Config {
             qq_ws_port: self.qq_ws_port.to_string(),
             qq_bot_appid: self.qq_bot_appid.clone(),
             qq_bot_token: self.qq_bot_token.clone(),
+            skills_enabled: self.skills_enabled.join(", "),
+            ai_groups_enabled: self.ai_groups_enabled,
+            ai_group_strategy: self.ai_group_strategy.clone(),
+            ai_group_openclaw_members: self.ai_group_openclaw_members.clone(),
+            ai_group_astrbot_members: self.ai_group_astrbot_members.clone(),
+            ai_group_hapi_endpoint: self.ai_group_hapi_endpoint.clone(),
+            ai_group_opencode_members: self.ai_group_opencode_members.clone(),
+            ai_group_codex_members: self.ai_group_codex_members.clone(),
+            ai_group_claude_code_members: self.ai_group_claude_code_members.clone(),
         }
     }
 
@@ -330,6 +388,8 @@ impl Config {
         next.wakeword_enabled = editable.wakeword_enabled;
         next.wakeword_list = editable.wakeword_list.trim().to_string();
         next.porcupine_access_key = editable.porcupine_access_key.trim().to_string();
+        next.porcupine_library_path = editable.porcupine_library_path.trim().to_string();
+        next.porcupine_model_path = editable.porcupine_model_path.trim().to_string();
         next.ws_enabled = editable.ws_enabled;
         next.ws_host = editable.ws_host.trim().to_string();
         next.ws_port = parse_u16(&editable.ws_port, self.ws_port);
@@ -352,6 +412,16 @@ impl Config {
         next.qq_ws_port = parse_u16(&editable.qq_ws_port, self.qq_ws_port);
         next.qq_bot_appid = editable.qq_bot_appid.trim().to_string();
         next.qq_bot_token = editable.qq_bot_token.trim().to_string();
+        next.skills_enabled = parse_string_list(&editable.skills_enabled);
+        next.ai_groups_enabled = editable.ai_groups_enabled;
+        next.ai_group_strategy = editable.ai_group_strategy.trim().to_string();
+        next.ai_group_openclaw_members = editable.ai_group_openclaw_members.trim().to_string();
+        next.ai_group_astrbot_members = editable.ai_group_astrbot_members.trim().to_string();
+        next.ai_group_hapi_endpoint = editable.ai_group_hapi_endpoint.trim().to_string();
+        next.ai_group_opencode_members = editable.ai_group_opencode_members.trim().to_string();
+        next.ai_group_codex_members = editable.ai_group_codex_members.trim().to_string();
+        next.ai_group_claude_code_members =
+            editable.ai_group_claude_code_members.trim().to_string();
         next
     }
 }
@@ -372,4 +442,13 @@ fn parse_u16(value: &str, fallback: u16) -> u16 {
 
 fn parse_f64(value: &str, fallback: f64) -> f64 {
     value.trim().parse().unwrap_or(fallback)
+}
+
+fn parse_string_list(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(ToString::to_string)
+        .collect()
 }

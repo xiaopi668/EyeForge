@@ -1,5 +1,6 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+mod ai_groups;
 mod app;
 mod channels;
 mod config;
@@ -9,6 +10,8 @@ mod runtime;
 mod server;
 mod tray;
 mod voice;
+mod wakeword;
+mod wechat;
 
 use iced::{Element, Font, Task, Theme};
 
