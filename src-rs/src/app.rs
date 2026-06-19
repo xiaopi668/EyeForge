@@ -18,7 +18,7 @@ const VERSION: &str = "2.0.0-beta.1";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Home,
-    Download,
+    Skill,
     Settings,
     Tools,
 }
@@ -26,6 +26,18 @@ pub enum Page {
 impl Default for Page {
     fn default() -> Self {
         Self::Home
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolsSection {
+    AiLoader,
+    AiGroups,
+}
+
+impl Default for ToolsSection {
+    fn default() -> Self {
+        Self::AiLoader
     }
 }
 
@@ -287,6 +299,7 @@ struct LogEntry {
 pub enum Message {
     SidebarClick(Page),
     SettingsSectionSelected(SettingsSection),
+    ToolsSectionSelected(ToolsSection),
     ProviderSelected(Provider),
     LanguageSelected(Language),
     ThemeSelected(ThemeMode),
@@ -319,6 +332,7 @@ pub struct EyeForge {
     theme: Theme,
     current_page: Page,
     current_settings_section: SettingsSection,
+    current_tools_section: ToolsSection,
     task_input: String,
     status_text: String,
     latest_result: Option<String>,
@@ -344,6 +358,7 @@ impl Default for EyeForge {
             theme: ThemeMode::from_config_value("dark").to_theme(),
             current_page: Page::Home,
             current_settings_section: SettingsSection::Ai,
+            current_tools_section: ToolsSection::AiLoader,
             task_input: String::new(),
             status_text: if language.is_zh() {
                 "就绪".into()
@@ -377,6 +392,7 @@ impl EyeForge {
             theme,
             current_page: Page::Home,
             current_settings_section: SettingsSection::Ai,
+            current_tools_section: ToolsSection::AiLoader,
             task_input: String::new(),
             status_text: if language.is_zh() {
                 "就绪".into()
@@ -544,6 +560,9 @@ impl EyeForge {
             }
             Message::SettingsSectionSelected(section) => {
                 self.current_settings_section = section;
+            }
+            Message::ToolsSectionSelected(section) => {
+                self.current_tools_section = section;
             }
             Message::ProviderSelected(provider) => {
                 self.settings.llm_provider = provider.as_config_value().to_string();
@@ -952,7 +971,7 @@ impl EyeForge {
         // 中间：导航标签（MyRadioButton 风格，带选中高亮）
         let nav_buttons = row![
             pcl_tab_button("启动", self.current_page == Page::Home, Page::Home),
-            pcl_tab_button("下载", self.current_page == Page::Download, Page::Download),
+            pcl_tab_button("Skill", self.current_page == Page::Skill, Page::Skill),
             pcl_tab_button("设置", self.current_page == Page::Settings, Page::Settings),
             pcl_tab_button("工具", self.current_page == Page::Tools, Page::Tools),
         ]
@@ -988,7 +1007,7 @@ impl EyeForge {
         // 下方布局：左侧内容区 + 右侧内容区（PCL CE 的 PanMainLeft + PanMainRight）
         let content = match self.current_page {
             Page::Home => self.home_page(),
-            Page::Download => self.skills_page(),
+            Page::Skill => self.skills_page(),
             Page::Settings => self.settings_page(),
             Page::Tools => self.tools_page(),
         };
@@ -1184,61 +1203,138 @@ impl EyeForge {
     }
 
     fn tools_page(&self) -> Element<'_, Message> {
-        // AI 加载器状态
-        let backends = model_manager::ModelManagerState::new();
-        let backend_info: Vec<Element<'_, Message>> = if backends.backends_available.is_empty() {
-            vec![text(self.t("未检测到后端", "No backends detected"))
-                .size(14)
-                .color(self.secondary_text_color())
-                .into()]
-        } else {
-            backends.backends_available.iter().map(|b| {
-                row![
-                    text(b.name).size(14).color(self.primary_text_color()),
-                    text(b.description).size(12).color(self.secondary_text_color()),
-                ]
-                .spacing(8)
-                .into()
-            }).collect()
+        let tabs = row![
+            tools_tab_button("AI 加载器", self.current_tools_section == ToolsSection::AiLoader, ToolsSection::AiLoader),
+            tools_tab_button("AI 群组", self.current_tools_section == ToolsSection::AiGroups, ToolsSection::AiGroups),
+        ]
+        .spacing(4);
+
+        let body = match self.current_tools_section {
+            ToolsSection::AiLoader => self.ai_loader_section(),
+            ToolsSection::AiGroups => self.ai_group_console(),
         };
 
-        let loader_panel = panel(
-            self.t("AI 加载器", "AI Loader"),
-            column![
-                text(self.t("已就绪的后端", "Available Backends"))
-                    .size(15)
-                    .color(self.accent_color()),
-                column(backend_info).spacing(6),
-                horizontal_rule(1),
-                text(self.t(
-                    "知识库条目数: {}",
-                    "Knowledge base entries: {}"
-                ).replacen("{}", &backends.kb_count.to_string(), 1))
-                .size(13)
-                .color(self.secondary_text_color()),
-            ]
-            .spacing(12)
-            .into(),
-            self.theme(),
-        );
-
-        // AI 群组面板
-        let group_panel = panel(
-            self.t("AI 群组", "AI Groups"),
-            self.ai_group_console(),
-            self.theme(),
-        );
-
-        container(
-            scrollable(
-                column![loader_panel, group_panel]
-                    .spacing(16)
-                    .padding([20, 24])
-            )
-            .height(Fill),
-        )
+        column![
+            tabs,
+            body,
+        ]
+        .spacing(14)
+        .padding([20, 24])
         .width(Fill)
         .height(Fill)
+        .into()
+    }
+
+    fn ai_loader_section(&self) -> Element<'_, Message> {
+        let backends = model_manager::ModelManagerState::new();
+        let mut backend_items: Vec<Element<'_, Message>> = Vec::new();
+
+        // 可用后端
+        if !backends.backends_available.is_empty() {
+            backend_items.push(
+                text(self.t("已就绪的后端", "Available Backends"))
+                    .size(15)
+                    .color(self.accent_color())
+                    .into()
+            );
+            for b in &backends.backends_available {
+                backend_items.push(
+                    row![
+                        text(format!("✓ {}", b.name)).size(14).color(self.primary_text_color()),
+                        text(b.description).size(12).color(self.secondary_text_color()),
+                    ]
+                    .spacing(8)
+                    .into()
+                );
+            }
+        }
+
+        // 缺失后端（可安装）
+        if !backends.backends_missing.is_empty() {
+            backend_items.push(
+                text(self.t("可安装的后端", "Installable Backends"))
+                    .size(15)
+                    .color(self.accent_color())
+                    .into()
+            );
+            for b in &backends.backends_missing {
+                backend_items.push(
+                    row![
+                        text(format!("✗ {}", b.name)).size(14).color(self.primary_text_color()),
+                        text(b.description).size(12).color(self.secondary_text_color()),
+                        iced::widget::horizontal_space(),
+                        button(text(self.t("安装", "Install")).size(12))
+                            .padding([4, 12])
+                            .style(subtle_button_style)
+                            .on_press(Message::BoolChanged(BoolField::VisionEnabled, false)),
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .into()
+                );
+            }
+        }
+
+        if backend_items.is_empty() {
+            backend_items.push(
+                text(self.t("未检测到后端信息", "No backend info detected"))
+                    .size(14)
+                    .color(self.secondary_text_color())
+                    .into()
+            );
+        }
+
+        // 设备选择
+        let device_row = row![
+            text(self.t("设备", "Device")).size(14).color(self.primary_text_color()),
+            pick_list(
+                &["CPU", "CUDA", "Metal", "Auto"][..],
+                Some("Auto"),
+                |_| Message::BoolChanged(BoolField::VisionEnabled, false), // placeholder
+            )
+            .padding([6, 12])
+            .text_size(14),
+        ]
+        .spacing(12)
+        .align_y(Alignment::Center);
+
+        // 扫描模型路径
+        let scan_btn: Element<'_, Message> = button(text(self.t("扫描", "Scan")).size(13))
+            .padding([8, 14])
+            .style(accent_button_style)
+            .on_press(Message::BoolChanged(BoolField::VisionEnabled, false))
+            .into();
+
+        let scan_row = row![
+            text_input(
+                self.t("模型路径...", "Model path..."),
+                "",
+            )
+            .padding(8)
+            .width(Fill),
+            scan_btn,
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center);
+
+        column![
+            panel(
+                self.t("后端管理", "Backend Management"),
+                column(backend_items).spacing(8).into(),
+                self.theme(),
+            ),
+            panel(
+                self.t("设备选择", "Device Selection"),
+                device_row.into(),
+                self.theme(),
+            ),
+            panel(
+                self.t("模型扫描", "Model Scan"),
+                scan_row.into(),
+                self.theme(),
+            ),
+        ]
+        .spacing(14)
         .into()
     }
 
@@ -3186,6 +3282,24 @@ fn settings_tab_button<'a>(
         })
         .width(Fill)
         .on_press(Message::SettingsSectionSelected(section))
+        .into()
+}
+
+fn tools_tab_button<'a>(
+    label: &'a str,
+    selected: bool,
+    section: ToolsSection,
+) -> Element<'a, Message> {
+    button(text(label).size(14))
+        .padding([8, 16])
+        .style(move |theme: &Theme, status| {
+            if selected {
+                accent_button_style(theme, status)
+            } else {
+                subtle_button_style(theme, status)
+            }
+        })
+        .on_press(Message::ToolsSectionSelected(section))
         .into()
 }
 
