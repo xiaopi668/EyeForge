@@ -12,6 +12,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use enigo::{Button, Direction, Keyboard, Mouse};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -117,6 +118,12 @@ async fn run_server(config: Config, shutdown: oneshot::Receiver<()>) -> Result<(
         )
         .route("/api/voice/devices", get(voice_devices))
         .route("/api/voice/transcribe", post(voice_transcribe))
+        .route("/api/screenshot", get(screenshot_handler))
+        .route("/api/desktop/click", post(desktop_click_handler))
+        .route("/api/desktop/type", post(desktop_type_handler))
+        .route("/api/desktop/hotkey", post(desktop_hotkey_handler))
+        .route("/api/desktop/scroll", post(desktop_scroll_handler))
+        .route("/api/screen-info", get(screen_info_handler))
         .route(GATEWAY_WS_PATH, get(ws_handler))
         .with_state(AppState {
             config: Arc::new(config),
@@ -779,4 +786,230 @@ fn merge_data(data: Option<serde_json::Value>, transcript: Vec<String>) -> serde
 
     base.insert("transcript".into(), json!(transcript));
     serde_json::Value::Object(base)
+}
+
+// ── 截图与桌面操作 API ──
+
+fn create_enigo() -> Result<enigo::Enigo, String> {
+    enigo::Enigo::new(&enigo::Settings::default()).map_err(|e| format!("enigo init failed: {e}"))
+}
+
+fn map_key(value: &str) -> Option<enigo::Key> {
+    match value.to_lowercase().as_str() {
+        "enter" | "return" => Some(enigo::Key::Return),
+        "tab" => Some(enigo::Key::Tab),
+        "space" => Some(enigo::Key::Space),
+        "backspace" => Some(enigo::Key::Backspace),
+        "escape" | "esc" => Some(enigo::Key::Escape),
+        "up" => Some(enigo::Key::UpArrow),
+        "down" => Some(enigo::Key::DownArrow),
+        "left" => Some(enigo::Key::LeftArrow),
+        "right" => Some(enigo::Key::RightArrow),
+        "shift" => Some(enigo::Key::Shift),
+        "control" | "ctrl" => Some(enigo::Key::Control),
+        "alt" => Some(enigo::Key::Alt),
+        "delete" | "del" => Some(enigo::Key::Delete),
+        "home" => Some(enigo::Key::Home),
+        "end" => Some(enigo::Key::End),
+        "pageup" => Some(enigo::Key::PageUp),
+        "pagedown" => Some(enigo::Key::PageDown),
+        "capslock" => Some(enigo::Key::CapsLock),
+        "f1" => Some(enigo::Key::F1),
+        "f2" => Some(enigo::Key::F2),
+        "f3" => Some(enigo::Key::F3),
+        "f4" => Some(enigo::Key::F4),
+        "f5" => Some(enigo::Key::F5),
+        "f6" => Some(enigo::Key::F6),
+        "f7" => Some(enigo::Key::F7),
+        "f8" => Some(enigo::Key::F8),
+        "f9" => Some(enigo::Key::F9),
+        "f10" => Some(enigo::Key::F10),
+        "f11" => Some(enigo::Key::F11),
+        "f12" => Some(enigo::Key::F12),
+        _ if value.len() == 1 => {
+            let c = value.chars().next().unwrap();
+            Some(enigo::Key::Unicode(c))
+        }
+        _ => None,
+    }
+}
+
+#[derive(Serialize)]
+struct ScreenshotResponse {
+    success: bool,
+    data: String,  // base64 PNG
+    width: u32,
+    height: u32,
+    error: Option<String>,
+}
+
+async fn screenshot_handler() -> Json<ScreenshotResponse> {
+    let monitors = xcap::Monitor::all().map_err(|e| e.to_string());
+    match monitors {
+        Ok(monitors) => {
+            if let Some(monitor) = monitors.first() {
+                match monitor.capture_image() {
+                    Ok(image) => {
+                        let (w, h) = (image.width(), image.height());
+                        let mut buf = std::io::Cursor::new(Vec::new());
+                        let result = image.write_to(&mut buf, image::ImageFormat::Png);
+                        match result {
+                            Ok(_) => {
+                                let b64 = base64::Engine::encode(
+                                    &base64::engine::general_purpose::STANDARD,
+                                    buf.get_ref(),
+                                );
+                                Json(ScreenshotResponse {
+                                    success: true,
+                                    data: b64,
+                                    width: w,
+                                    height: h,
+                                    error: None,
+                                })
+                            }
+                            Err(e) => Json(ScreenshotResponse {
+                                success: false,
+                                data: String::new(),
+                                width: 0,
+                                height: 0,
+                                error: Some(format!("encode failed: {e}")),
+                            }),
+                        }
+                    }
+                    Err(e) => Json(ScreenshotResponse {
+                        success: false,
+                        data: String::new(),
+                        width: 0,
+                        height: 0,
+                        error: Some(format!("capture failed: {e}")),
+                    }),
+                }
+            } else {
+                Json(ScreenshotResponse {
+                    success: false,
+                    data: String::new(),
+                    width: 0,
+                    height: 0,
+                    error: Some("no monitor found".into()),
+                })
+            }
+        }
+        Err(e) => Json(ScreenshotResponse {
+            success: false,
+            data: String::new(),
+            width: 0,
+            height: 0,
+            error: Some(e),
+        }),
+    }
+}
+
+#[derive(Deserialize)]
+struct ClickRequest {
+    x: Option<i32>,
+    y: Option<i32>,
+    button: Option<String>,
+    double: Option<bool>,
+}
+
+async fn desktop_click_handler(ExtractJson(payload): ExtractJson<ClickRequest>) -> Json<serde_json::Value> {
+    let Ok(mut enigo) = create_enigo() else {
+        return Json(json!({"success": false, "error": "enigo init failed"}));
+    };
+    let _ = (payload.x, payload.y);
+    let btn = match payload.button.as_deref() {
+        Some("right") => Button::Right,
+        _ => Button::Left,
+    };
+    let _ = enigo.button(btn, Direction::Click);
+    if payload.double.unwrap_or(false) {
+        let _ = enigo.button(btn, Direction::Click);
+    }
+    Json(json!({"success": true}))
+}
+
+#[derive(Deserialize)]
+struct TypeRequest {
+    text: String,
+}
+
+async fn desktop_type_handler(ExtractJson(payload): ExtractJson<TypeRequest>) -> Json<serde_json::Value> {
+    let Ok(mut enigo) = create_enigo() else {
+        return Json(json!({"success": false, "error": "enigo init failed"}));
+    };
+    let _ = enigo.text(&payload.text);
+    Json(json!({"success": true}))
+}
+
+#[derive(Deserialize)]
+struct HotkeyRequest {
+    keys: Vec<String>,
+}
+
+async fn desktop_hotkey_handler(ExtractJson(payload): ExtractJson<HotkeyRequest>) -> Json<serde_json::Value> {
+    let Ok(mut enigo) = create_enigo() else {
+        return Json(json!({"success": false, "error": "enigo init failed"}));
+    };
+    for key_str in &payload.keys {
+        let _ = enigo.text(key_str);
+    }
+    Json(json!({"success": true}))
+}
+
+#[derive(Deserialize)]
+struct ScrollRequest {
+    x: i32,
+    y: i32,
+    delta_x: Option<i32>,
+    delta_y: Option<i32>,
+}
+
+async fn desktop_scroll_handler(ExtractJson(payload): ExtractJson<ScrollRequest>) -> Json<serde_json::Value> {
+    let Ok(mut enigo) = create_enigo() else {
+        return Json(json!({"success": false, "error": "enigo init failed"}));
+    };
+    let dx = payload.delta_x.unwrap_or(0);
+    let dy = payload.delta_y.unwrap_or(-3);
+    let _ = enigo.scroll(dy, enigo::Axis::Vertical);
+    Json(json!({"success": true}))
+}
+
+#[derive(Serialize)]
+struct ScreenInfo {
+    success: bool,
+    width: i32,
+    height: i32,
+    count: usize,
+    error: Option<String>,
+}
+
+async fn screen_info_handler() -> Json<ScreenInfo> {
+    match xcap::Monitor::all() {
+        Ok(monitors) => {
+            if let Some(m) = monitors.first() {
+                Json(ScreenInfo {
+                    success: true,
+                    width: m.width().unwrap_or(0) as i32,
+                    height: m.height().unwrap_or(0) as i32,
+                    count: monitors.len(),
+                    error: None,
+                })
+            } else {
+                Json(ScreenInfo {
+                    success: false,
+                    width: 0,
+                    height: 0,
+                    count: 0,
+                    error: Some("no monitor".into()),
+                })
+            }
+        }
+        Err(e) => Json(ScreenInfo {
+            success: false,
+            width: 0,
+            height: 0,
+            count: 0,
+            error: Some(e.to_string()),
+        }),
+    }
 }
