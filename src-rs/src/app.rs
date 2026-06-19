@@ -12,14 +12,14 @@ use crate::runtime::{self, NativeOutcome};
 use crate::server;
 use crate::wechat::{QrLoginResult, QrLoginSession};
 
-const VERSION: &str = "1.5.0-beta.2";
+const VERSION: &str = "2.0.0-beta.1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Home,
+    Download,
     Settings,
-    Skills,
-    AiGroups,
+    Tools,
 }
 
 impl Default for Page {
@@ -951,9 +951,9 @@ impl EyeForge {
         // 中间：导航标签（MyRadioButton 风格，带选中高亮）
         let nav_buttons = row![
             pcl_tab_button("启动", self.current_page == Page::Home, Page::Home),
-            pcl_tab_button("下载", false, Page::Home),        // placeholder
+            pcl_tab_button("下载", self.current_page == Page::Download, Page::Download),
             pcl_tab_button("设置", self.current_page == Page::Settings, Page::Settings),
-            pcl_tab_button("工具", false, Page::Home),        // placeholder
+            pcl_tab_button("工具", self.current_page == Page::Tools, Page::Tools),
         ]
         .spacing(4);
 
@@ -964,7 +964,7 @@ impl EyeForge {
                 if self.window_maximized { "❐" } else { "□" },
                 Message::WindowMaximizePressed
             ),
-            pcl_window_button("✕", Message::WindowClosePressed)
+            pcl_window_button("×", Message::WindowClosePressed)
                 .style(close_button_style),
         ]
         .spacing(0);
@@ -987,9 +987,9 @@ impl EyeForge {
         // 下方布局：左侧内容区 + 右侧内容区（PCL CE 的 PanMainLeft + PanMainRight）
         let content = match self.current_page {
             Page::Home => self.home_page(),
+            Page::Download => self.download_page(),
             Page::Settings => self.settings_page(),
-            Page::Skills => self.skills_page(),
-            Page::AiGroups => self.ai_groups_page(),
+            Page::Tools => self.tools_page(),
         };
 
         column![top_bar, content]
@@ -1155,6 +1155,48 @@ impl EyeForge {
                 .spacing(18)
                 .padding([20, 24])
                 .width(Fill),
+        )
+        .width(Fill)
+        .height(Fill)
+        .into()
+    }
+
+    fn download_page(&self) -> Element<'_, Message> {
+        container(
+            column![
+                text(self.t("下载", "Download"))
+                    .size(28)
+                    .color(self.primary_text_color()),
+                text(self.t(
+                    "下载功能正在开发中，敬请期待。",
+                    "Download feature is under development. Stay tuned."
+                ))
+                .size(16)
+                .color(self.secondary_text_color()),
+            ]
+            .spacing(16)
+            .padding(40),
+        )
+        .width(Fill)
+        .height(Fill)
+        .into()
+    }
+
+    fn tools_page(&self) -> Element<'_, Message> {
+        container(
+            column![
+                text(self.t("工具", "Tools"))
+                    .size(28)
+                    .color(self.primary_text_color()),
+                text(self.t(
+                    "工具功能正在开发中，敬请期待。",
+                    "Tools feature is under development. Stay tuned."
+                ))
+                .size(16)
+                .color(self.secondary_text_color()),
+            ]
+            .spacing(16)
+            .padding(40),
         )
         .width(Fill)
         .height(Fill)
