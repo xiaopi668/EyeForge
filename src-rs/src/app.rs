@@ -8,6 +8,7 @@ use iced::{Subscription, Task, Theme};
 use std::time::Duration;
 
 use crate::config::{Config, EditableConfig};
+use crate::model_manager;
 use crate::runtime::{self, NativeOutcome};
 use crate::server;
 use crate::wechat::{QrLoginResult, QrLoginSession};
@@ -987,7 +988,7 @@ impl EyeForge {
         // 下方布局：左侧内容区 + 右侧内容区（PCL CE 的 PanMainLeft + PanMainRight）
         let content = match self.current_page {
             Page::Home => self.home_page(),
-            Page::Download => self.download_page(),
+            Page::Download => self.skills_page(),
             Page::Settings => self.settings_page(),
             Page::Tools => self.tools_page(),
         };
@@ -1183,20 +1184,58 @@ impl EyeForge {
     }
 
     fn tools_page(&self) -> Element<'_, Message> {
-        container(
+        // AI 加载器状态
+        let backends = model_manager::ModelManagerState::new();
+        let backend_info: Vec<Element<'_, Message>> = if backends.backends_available.is_empty() {
+            vec![text(self.t("未检测到后端", "No backends detected"))
+                .size(14)
+                .color(self.secondary_text_color())
+                .into()]
+        } else {
+            backends.backends_available.iter().map(|b| {
+                row![
+                    text(b.name).size(14).color(self.primary_text_color()),
+                    text(b.description).size(12).color(self.secondary_text_color()),
+                ]
+                .spacing(8)
+                .into()
+            }).collect()
+        };
+
+        let loader_panel = panel(
+            self.t("AI 加载器", "AI Loader"),
             column![
-                text(self.t("工具", "Tools"))
-                    .size(28)
-                    .color(self.primary_text_color()),
+                text(self.t("已就绪的后端", "Available Backends"))
+                    .size(15)
+                    .color(self.accent_color()),
+                column(backend_info).spacing(6),
+                horizontal_rule(1),
                 text(self.t(
-                    "工具功能正在开发中，敬请期待。",
-                    "Tools feature is under development. Stay tuned."
-                ))
-                .size(16)
+                    "知识库条目数: {}",
+                    "Knowledge base entries: {}"
+                ).replacen("{}", &backends.kb_count.to_string(), 1))
+                .size(13)
                 .color(self.secondary_text_color()),
             ]
-            .spacing(16)
-            .padding(40),
+            .spacing(12)
+            .into(),
+            self.theme(),
+        );
+
+        // AI 群组面板
+        let group_panel = panel(
+            self.t("AI 群组", "AI Groups"),
+            self.ai_group_console(),
+            self.theme(),
+        );
+
+        container(
+            scrollable(
+                column![loader_panel, group_panel]
+                    .spacing(16)
+                    .padding([20, 24])
+            )
+            .height(Fill),
         )
         .width(Fill)
         .height(Fill)
