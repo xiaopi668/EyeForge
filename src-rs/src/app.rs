@@ -1279,7 +1279,7 @@ impl EyeForge {
         };
         let mut backend_items: Vec<Element<'_, Message>> = Vec::new();
 
-        // 可用后端
+        // 可用后端（每行加 checkbox）
         if !backends_available.is_empty() {
             backend_items.push(
                 text(self.t("已就绪的后端", "Available Backends"))
@@ -1290,16 +1290,20 @@ impl EyeForge {
             for b in &backends_available {
                 backend_items.push(
                     row![
-                        text(format!("✓ {}", b.name)).size(14).color(self.primary_text_color()),
+                        checkbox("", b.name == self.selected_backend)
+                            .on_toggle(|_| Message::BackendSelected(b.name.to_string()))
+                            .size(16),
+                        text(b.name).size(14).color(self.primary_text_color()),
                         text(b.description).size(12).color(self.secondary_text_color()),
                     ]
                     .spacing(8)
+                    .align_y(Alignment::Center)
                     .into()
                 );
             }
         }
 
-        // 缺失后端（可安装）
+        // 缺失后端（可安装，每行加 checkbox）
         if !backends_missing.is_empty() {
             backend_items.push(
                 text(self.t("可安装的后端", "Installable Backends"))
@@ -1310,13 +1314,13 @@ impl EyeForge {
             for b in &backends_missing {
                 backend_items.push(
                     row![
+                        checkbox("", false)
+                            .size(16),
                         text(format!("✗ {}", b.name)).size(14).color(self.primary_text_color()),
                         text(b.description).size(12).color(self.secondary_text_color()),
                         iced::widget::horizontal_space(),
-                        button(text(self.t("安装", "Install")).size(12))
-                            .padding([4, 12])
-                            .style(subtle_button_style)
-                            .on_press(Message::BoolChanged(BoolField::VisionEnabled, false)),
+                        checkbox(self.t("安装", "Install"), false)
+                            .size(16),
                     ]
                     .spacing(8)
                     .align_y(Alignment::Center)
@@ -1334,16 +1338,37 @@ impl EyeForge {
             );
         }
 
-        // 设备选择
+        // 根据选中的后端动态生成设备选项
+        let devices: &[&str] = match selected_name {
+            "llama.cpp" => &["Auto", "CPU", "CUDA", "Metal", "Vulkan"],
+            "ONNX Runtime" => &["Auto", "CPU", "CUDA", "TensorRT", "OpenVINO"],
+            "PyTorch" => &["Auto", "CPU", "CUDA", "MPS"],
+            "TensorRT" => &["Auto", "CUDA"],
+            "OpenVINO" => &["Auto", "CPU", "GPU"],
+            "TensorFlow Lite" => &["Auto", "CPU", "GPU", "NPU"],
+            "MLX" => &["Auto", "CPU", "GPU"],
+            "Core ML" => &["Auto", "CPU", "ANE"],
+            "Candle" => &["Auto", "CPU", "CUDA", "Metal"],
+            "Burn" => &["Auto", "CPU", "CUDA", "Metal", "Vulkan"],
+            "MNN" => &["Auto", "CPU", "CUDA", "Metal", "OpenCL", "Vulkan"],
+            "NCNN" => &["Auto", "CPU", "Vulkan"],
+            "TVM" => &["Auto", "CPU", "CUDA", "Metal", "OpenCL", "Vulkan"],
+            "Tch-rs" => &["Auto", "CPU", "CUDA", "MPS"],
+            _ => &["Auto", "CPU"],
+        };
+        let default_device = devices.first().unwrap_or(&"Auto");
+
+        // 设备选择（根据后端动态变化）
         let device_row = row![
-            text(self.t("设备", "Device")).size(14).color(self.primary_text_color()),
+            text(self.t("运行设备", "Device")).size(14).color(self.primary_text_color()),
             pick_list(
-                &["CPU", "CUDA", "Metal", "Auto"][..],
-                Some("Auto"),
-                |_| Message::BoolChanged(BoolField::VisionEnabled, false), // placeholder
+                devices,
+                Some(default_device),
+                |_| Message::BoolChanged(BoolField::VisionEnabled, false),
             )
             .padding([6, 12])
-            .text_size(14),
+            .text_size(14)
+            .width(180),
         ]
         .spacing(12)
         .align_y(Alignment::Center);
@@ -1392,13 +1417,14 @@ impl EyeForge {
             ]
         } else {
             supported_formats.iter().map(|fmt| {
-                container(
+                row![
+                    checkbox("", false).size(16),
                     text(format!("📦 {}", fmt))
                         .size(13)
                         .color(self.primary_text_color()),
-                )
-                .padding([6, 12])
-                .style(feature_surface_style)
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center)
                 .into()
             }).collect()
         };
@@ -1422,8 +1448,8 @@ impl EyeForge {
             text(self.t("支持的模型格式:", "Supported formats:"))
                 .size(13)
                 .color(self.secondary_text_color()),
-            row(format_items)
-                .spacing(8)
+            column(format_items)
+                .spacing(6)
                 .padding([4, 0]),
         ]
         .spacing(10);
