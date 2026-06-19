@@ -324,6 +324,7 @@ pub enum Message {
     WindowClosePressed,
     TrayTick,
     ShowWindowById(Option<window::Id>),
+    RefreshBackends(Option<model_manager::ModelManagerState>),
 }
 
 pub struct EyeForge {
@@ -342,6 +343,7 @@ pub struct EyeForge {
     wechat_login_running: bool,
     wechat_qr_image: Option<image::Handle>,
     wechat_qr_status: Option<String>,
+    model_state: Option<model_manager::ModelManagerState>,
     main_window_id: Option<window::Id>,
     window_maximized: bool,
 }
@@ -372,6 +374,7 @@ impl Default for EyeForge {
             wechat_login_running: false,
             wechat_qr_image: None,
             wechat_qr_status: None,
+            model_state: None,
             main_window_id: None,
             window_maximized: false,
         }
@@ -406,6 +409,7 @@ impl EyeForge {
             wechat_login_running: false,
             wechat_qr_image: None,
             wechat_qr_status: None,
+            model_state: None,
             main_window_id: None,
             window_maximized: false,
         };
@@ -550,11 +554,26 @@ impl EyeForge {
                     return Self::restore_window(id);
                 }
             }
+            Message::RefreshBackends(state) => {
+                self.model_state = state;
+            }
             Message::SidebarClick(page) => {
                 self.current_page = if page == Page::Settings && self.current_page == Page::Settings
                 {
                     Page::Home
                 } else {
+                    if page == Page::Tools && self.model_state.is_none() {
+                        let future = async {
+                            let state = tokio::task::spawn_blocking(|| {
+                                model_manager::ModelManagerState::new()
+                            })
+                            .await
+                            .ok();
+                            Message::RefreshBackends(state)
+                        };
+                        self.current_page = page;
+                        return Task::perform(future, |msg| msg);
+                    }
                     page
                 };
             }
@@ -1226,18 +1245,36 @@ impl EyeForge {
     }
 
     fn ai_loader_section(&self) -> Element<'_, Message> {
-        let backends = model_manager::ModelManagerState::new();
+        let backends = self.model_state.as_ref().map(|s| {
+            (s.backends_available.clone(), s.backends_missing.clone(), s.kb_count)
+        });
+
+        let (backends_available, backends_missing, kb_count) = match backends {
+            Some((avail, miss, kb)) => (avail, miss, kb),
+            None => {
+                return container(
+                    text(self.t("正在检测后端...", "Detecting backends..."))
+                        .size(16)
+                        .color(self.secondary_text_color()),
+                )
+                .center_x(Fill)
+                .center_y(Fill)
+                .width(Fill)
+                .height(Fill)
+                .into();
+            }
+        };
         let mut backend_items: Vec<Element<'_, Message>> = Vec::new();
 
         // 可用后端
-        if !backends.backends_available.is_empty() {
+        if !backends_available.is_empty() {
             backend_items.push(
                 text(self.t("已就绪的后端", "Available Backends"))
                     .size(15)
                     .color(self.accent_color())
                     .into()
             );
-            for b in &backends.backends_available {
+            for b in &backends_available {
                 backend_items.push(
                     row![
                         text(format!("✓ {}", b.name)).size(14).color(self.primary_text_color()),
@@ -1250,14 +1287,14 @@ impl EyeForge {
         }
 
         // 缺失后端（可安装）
-        if !backends.backends_missing.is_empty() {
+        if !backends_missing.is_empty() {
             backend_items.push(
                 text(self.t("可安装的后端", "Installable Backends"))
                     .size(15)
                     .color(self.accent_color())
                     .into()
             );
-            for b in &backends.backends_missing {
+            for b in &backends_missing {
                 backend_items.push(
                     row![
                         text(format!("✗ {}", b.name)).size(14).color(self.primary_text_color()),
