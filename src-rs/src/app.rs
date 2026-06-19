@@ -322,6 +322,7 @@ pub enum Message {
     WindowMinimizePressed,
     WindowMaximizePressed,
     WindowClosePressed,
+    BackendSelected(String),
     TrayTick,
     ShowWindowById(Option<window::Id>),
     RefreshBackends(Option<model_manager::ModelManagerState>),
@@ -346,6 +347,7 @@ pub struct EyeForge {
     model_state: Option<model_manager::ModelManagerState>,
     main_window_id: Option<window::Id>,
     window_maximized: bool,
+    selected_backend: String,
 }
 
 impl Default for EyeForge {
@@ -377,6 +379,7 @@ impl Default for EyeForge {
             model_state: None,
             main_window_id: None,
             window_maximized: false,
+            selected_backend: String::new(),
         }
     }
 }
@@ -412,6 +415,7 @@ impl EyeForge {
             model_state: None,
             main_window_id: None,
             window_maximized: false,
+            selected_backend: String::new(),
         };
 
         let gateway_status = server::restart(&app.config);
@@ -556,6 +560,15 @@ impl EyeForge {
             }
             Message::RefreshBackends(state) => {
                 self.model_state = state;
+                // 有后端可用时默认选中第一个
+                if let Some(ref ms) = self.model_state {
+                    if !ms.backends_available.is_empty() && self.selected_backend.is_empty() {
+                        self.selected_backend = ms.backends_available[0].name.to_string();
+                    }
+                }
+            }
+            Message::BackendSelected(name) => {
+                self.selected_backend = name;
             }
             Message::SidebarClick(page) => {
                 self.current_page = if page == Page::Settings && self.current_page == Page::Settings
@@ -1354,10 +1367,76 @@ impl EyeForge {
         .spacing(10)
         .align_y(Alignment::Center);
 
+        // 推理后端选择
+        let backend_names: Vec<&str> = backends_available.iter().map(|b| b.name).collect();
+        let default_selection = if self.selected_backend.is_empty() {
+            backend_names.first().copied()
+        } else {
+            Some(self.selected_backend.as_str())
+        };
+        let selected_name = default_selection.unwrap_or("");
+
+        // 查找选中后端的格式
+        let supported_formats: Vec<&str> = backends_available
+            .iter()
+            .find(|b| b.name == selected_name)
+            .map(|b| b.supported_formats.clone())
+            .unwrap_or_default();
+
+        let format_items: Vec<Element<'_, Message>> = if supported_formats.is_empty() {
+            vec![
+                text(self.t("无支持的模型格式", "No supported formats"))
+                    .size(13)
+                    .color(self.secondary_text_color())
+                    .into()
+            ]
+        } else {
+            supported_formats.iter().map(|fmt| {
+                container(
+                    text(format!("📦 {}", fmt))
+                        .size(13)
+                        .color(self.primary_text_color()),
+                )
+                .padding([6, 12])
+                .style(feature_surface_style)
+                .into()
+            }).collect()
+        };
+
+        let backend_select = column![
+            row![
+                text(self.t("推理后端", "Inference Backend"))
+                    .size(14)
+                    .color(self.primary_text_color()),
+                pick_list(
+                    backend_names,
+                    default_selection,
+                    |s| Message::BackendSelected(s.to_string()),
+                )
+                .padding([6, 12])
+                .text_size(14)
+                .width(200),
+            ]
+            .spacing(12)
+            .align_y(Alignment::Center),
+            text(self.t("支持的模型格式:", "Supported formats:"))
+                .size(13)
+                .color(self.secondary_text_color()),
+            row(format_items)
+                .spacing(8)
+                .padding([4, 0]),
+        ]
+        .spacing(10);
+
         column![
             panel(
                 self.t("后端管理", "Backend Management"),
                 column(backend_items).spacing(8).into(),
+                self.theme(),
+            ),
+            panel(
+                self.t("推理后端选择", "Inference Backend"),
+                backend_select.into(),
                 self.theme(),
             ),
             panel(

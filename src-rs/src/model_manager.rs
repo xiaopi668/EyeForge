@@ -38,6 +38,7 @@ pub struct ModelManagerState {
 pub struct BackendEntry {
     pub name: &'static str,
     pub description: &'static str,
+    pub supported_formats: Vec<&'static str>,
 }
 
 impl ModelManagerState {
@@ -46,9 +47,27 @@ impl ModelManagerState {
         let mut available = Vec::new();
         let mut missing = Vec::new();
         for s in &statuses {
+            let formats: Vec<&'static str> = match s.info.name {
+                "llama.cpp" => vec!["GGUF", "GGML"],
+                "ONNX Runtime" => vec!["ONNX", "ORT"],
+                "PyTorch" => vec!["PyTorch", "TorchScript"],
+                "TensorRT" => vec!["TensorRT", "ONNX", "TRT"],
+                "OpenVINO" => vec!["IR", "ONNX", "PaddlePaddle", "TF"],
+                "TensorFlow Lite" => vec!["TFLite", "FlatBuffer"],
+                "MLX" => vec!["MLX", "SafeTensors"],
+                "MNN" => vec!["MNN"],
+                "NCNN" => vec!["NCNN", "Param", "Bin"],
+                "Core ML" => vec!["CoreML", "MIL"],
+                "TVM" => vec!["TVM", "Relay", "TIR"],
+                "Tch-rs" => vec!["TorchScript", "SafeTensors"],
+                "Candle" => vec!["SafeTensors", "GGUF"],
+                "Burn" => vec!["Burn"],
+                _ => vec![s.info.name],
+            };
             let entry = BackendEntry {
                 name: s.info.name,
                 description: s.info.description,
+                supported_formats: formats,
             };
             if s.available {
                 available.push(entry);
@@ -77,9 +96,27 @@ impl ModelManagerState {
         self.backends_available.clear();
         self.backends_missing.clear();
         for s in &statuses {
+            let formats: Vec<&'static str> = match s.info.name {
+                "llama.cpp" => vec!["GGUF", "GGML"],
+                "ONNX Runtime" => vec!["ONNX", "ORT"],
+                "PyTorch" => vec!["PyTorch", "TorchScript"],
+                "TensorRT" => vec!["TensorRT", "ONNX", "TRT"],
+                "OpenVINO" => vec!["IR", "ONNX", "PaddlePaddle", "TF"],
+                "TensorFlow Lite" => vec!["TFLite", "FlatBuffer"],
+                "MLX" => vec!["MLX", "SafeTensors"],
+                "MNN" => vec!["MNN"],
+                "NCNN" => vec!["NCNN", "Param", "Bin"],
+                "Core ML" => vec!["CoreML", "MIL"],
+                "TVM" => vec!["TVM", "Relay", "TIR"],
+                "Tch-rs" => vec!["TorchScript", "SafeTensors"],
+                "Candle" => vec!["SafeTensors", "GGUF"],
+                "Burn" => vec!["Burn"],
+                _ => vec![s.info.name],
+            };
             let entry = BackendEntry {
                 name: s.info.name,
                 description: s.info.description,
+                supported_formats: formats,
             };
             if s.available {
                 self.backends_available.push(entry);
