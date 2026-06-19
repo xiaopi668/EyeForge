@@ -27,7 +27,7 @@
         </nav>
 
         <div class="sidebar-foot">
-          <span>v1.5.0-beta.2</span>
+          <span>v2.0.0-beta.1</span>
           <span data-i18n="sidebar_gateway">Gateway :9178</span>
         </div>
       </aside>
@@ -111,19 +111,25 @@
               <span class="state-dot is-connected" data-i18n="settings_local">Local</span>
             </div>
             <div class="settings-grid">
-              <label class="toggle-line">
-                <input id="webui-toggle" type="checkbox" checked />
-                <span data-i18n="settings_webui_toggle">Enable Web UI gateway</span>
-              </label>
-              <label class="toggle-line">
-                <input id="settings-vision-toggle" type="checkbox" checked />
-                <span data-i18n="settings_vision_toggle">Enable vision hint</span>
-              </label>
-              <label class="toggle-line">
-                <input id="settings-skill-toggle" type="checkbox" checked />
-                <span data-i18n="settings_skill_toggle">Enable Skill system</span>
-              </label>
-              <p data-i18n="settings_hint"></p>
+              <article class="settings-card">
+                <label class="toggle-line">
+                  <input id="webui-toggle" type="checkbox" checked />
+                  <span data-i18n="settings_webui_toggle">Enable Web UI gateway</span>
+                </label>
+              </article>
+              <article class="settings-card">
+                <label class="toggle-line">
+                  <input id="settings-vision-toggle" type="checkbox" checked />
+                  <span data-i18n="settings_vision_toggle">Enable vision hint</span>
+                </label>
+              </article>
+              <article class="settings-card">
+                <label class="toggle-line">
+                  <input id="settings-skill-toggle" type="checkbox" checked />
+                  <span data-i18n="settings_skill_toggle">Enable Skill system</span>
+                </label>
+              </article>
+              <p class="settings-hint" data-i18n="settings_hint"></p>
             </div>
           </section>
 

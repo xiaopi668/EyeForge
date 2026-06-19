@@ -1,5 +1,5 @@
 #[cfg(target_os = "windows")]
-use std::{cell::RefCell, path::PathBuf};
+use std::cell::RefCell;
 
 #[cfg(target_os = "windows")]
 use tray_icon::{
@@ -35,14 +35,9 @@ pub fn ensure_tray() {
             return;
         }
 
-        let icon_path = match locate_icon() {
-            Some(path) => path,
+        let icon = match make_icon() {
+            Some(icon) => icon,
             None => return,
-        };
-
-        let icon = match Icon::from_path(icon_path, None) {
-            Ok(icon) => icon,
-            Err(_) => return,
         };
 
         let menu = Menu::new();
@@ -103,22 +98,18 @@ pub fn next_command() -> Option<TrayCommand> {
 }
 
 #[cfg(target_os = "windows")]
-fn locate_icon() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-
-    for dir in exe.ancestors() {
-        let candidate = dir.join("logo.ico");
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-
-    let cwd_candidate = std::env::current_dir().ok()?.join("logo.ico");
-    if cwd_candidate.exists() {
-        return Some(cwd_candidate);
-    }
-
-    None
+fn make_icon() -> Option<Icon> {
+    let svg_data = include_bytes!("../../logo.svg");
+    let tree = usvg::Tree::from_data(svg_data, &usvg::Options::default()).ok()?;
+    let svg_size = tree.size();
+    let sx = 32.0 / svg_size.width();
+    let sy = 32.0 / svg_size.height();
+    let s = sx.min(sy);
+    let ts = tiny_skia::Transform::from_scale(s, s);
+    let mut pixmap = tiny_skia::Pixmap::new(32, 32)?;
+    let mut pm = pixmap.as_mut();
+    resvg::render(&tree, ts, &mut pm);
+    Icon::from_rgba(pixmap.data().to_vec(), 32, 32).ok()
 }
 
 #[cfg(not(target_os = "windows"))]

@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use crate::crypto;
 
@@ -105,6 +106,8 @@ pub struct Config {
     #[serde(default = "default_use_vision")]
     pub use_vision: bool,
     #[serde(default)]
+    pub shell_enabled: bool,
+    #[serde(default)]
     pub skills_enabled: Vec<String>,
     #[serde(default)]
     pub ai_groups_enabled: bool,
@@ -126,6 +129,12 @@ pub struct Config {
     pub ai_group_codex_members: String,
     #[serde(default)]
     pub ai_group_claude_code_members: String,
+    #[serde(default)]
+    pub ai_group_api_members: String,
+    #[serde(default)]
+    pub selected_backend_id: String,
+    #[serde(default)]
+    pub manual_backend_path: String,
     #[serde(default, flatten)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -178,6 +187,7 @@ pub struct EditableConfig {
     pub qq_ws_port: String,
     pub qq_bot_appid: String,
     pub qq_bot_token: String,
+    pub shell_enabled: bool,
     pub skills_enabled: String,
     pub ai_groups_enabled: bool,
     pub ai_group_name: String,
@@ -189,6 +199,9 @@ pub struct EditableConfig {
     pub ai_group_opencode_members: String,
     pub ai_group_codex_members: String,
     pub ai_group_claude_code_members: String,
+    pub ai_group_api_members: String,
+    pub selected_backend_id: String,
+    pub manual_backend_path: String,
 }
 
 fn default_screenshot_quality() -> u32 {
@@ -279,6 +292,7 @@ impl Default for Config {
             qq_bot_appid: String::new(),
             qq_bot_token: String::new(),
             use_vision: true,
+            shell_enabled: false,
             skills_enabled: vec![],
             ai_groups_enabled: false,
             ai_group_name: String::new(),
@@ -290,16 +304,25 @@ impl Default for Config {
             ai_group_opencode_members: String::new(),
             ai_group_codex_members: String::new(),
             ai_group_claude_code_members: String::new(),
+            ai_group_api_members: String::new(),
+            selected_backend_id: String::new(),
+            manual_backend_path: String::new(),
             extra: BTreeMap::new(),
         }
     }
 }
 
 impl Config {
+    pub fn path() -> PathBuf {
+        config_path()
+    }
+
     pub fn load() -> Self {
         let path = config_path();
         if let Ok(data) = fs::read_to_string(&path) {
-            serde_json::from_str(&data).unwrap_or_default()
+            let mut config: Config = serde_json::from_str(&data).unwrap_or_default();
+            migrate_legacy_ai_group_endpoint(&mut config);
+            config
         } else {
             Config::default()
         }
@@ -310,6 +333,10 @@ impl Config {
         if let Ok(data) = serde_json::to_string_pretty(self) {
             let _ = fs::write(&path, data);
         }
+    }
+
+    pub fn modified() -> Option<SystemTime> {
+        fs::metadata(config_path()).ok()?.modified().ok()
     }
 
     pub fn to_editable(&self) -> EditableConfig {
@@ -360,6 +387,7 @@ impl Config {
             qq_ws_port: self.qq_ws_port.to_string(),
             qq_bot_appid: self.qq_bot_appid.clone(),
             qq_bot_token: self.qq_bot_token.clone(),
+            shell_enabled: self.shell_enabled,
             skills_enabled: self.skills_enabled.join(", "),
             ai_groups_enabled: self.ai_groups_enabled,
             ai_group_name: self.ai_group_name.clone(),
@@ -371,6 +399,9 @@ impl Config {
             ai_group_opencode_members: self.ai_group_opencode_members.clone(),
             ai_group_codex_members: self.ai_group_codex_members.clone(),
             ai_group_claude_code_members: self.ai_group_claude_code_members.clone(),
+            ai_group_api_members: self.ai_group_api_members.clone(),
+            selected_backend_id: self.selected_backend_id.clone(),
+            manual_backend_path: self.manual_backend_path.clone(),
         }
     }
 
@@ -422,6 +453,7 @@ impl Config {
         next.qq_ws_port = parse_u16(&editable.qq_ws_port, self.qq_ws_port);
         next.qq_bot_appid = editable.qq_bot_appid.trim().to_string();
         next.qq_bot_token = editable.qq_bot_token.trim().to_string();
+        next.shell_enabled = editable.shell_enabled;
         next.skills_enabled = parse_string_list(&editable.skills_enabled);
         next.ai_groups_enabled = editable.ai_groups_enabled;
         next.ai_group_name = editable.ai_group_name.trim().to_string();
@@ -434,14 +466,90 @@ impl Config {
         next.ai_group_codex_members = editable.ai_group_codex_members.trim().to_string();
         next.ai_group_claude_code_members =
             editable.ai_group_claude_code_members.trim().to_string();
+        next.ai_group_api_members = editable.ai_group_api_members.trim().to_string();
+        next.selected_backend_id = editable.selected_backend_id.trim().to_string();
+        next.manual_backend_path = editable.manual_backend_path.trim().to_string();
         next
     }
 }
 
 fn config_path() -> PathBuf {
-    std::env::current_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("config.json")
+    let candidates = config_candidate_paths();
+
+    if let Some(path) = candidates.iter().find(|path| has_enabled_wechat(path)) {
+        return path.clone();
+    }
+
+    if let Some(path) = candidates.iter().find(|path| has_wechat_token(path)) {
+        return path.clone();
+    }
+
+    if let Some(path) = candidates.iter().find(|path| path.exists()) {
+        return path.clone();
+    }
+
+    candidates
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| PathBuf::from("config.json"))
+}
+
+fn config_candidate_paths() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(current_dir) = std::env::current_dir() {
+        push_config_candidate(&mut candidates, current_dir.join("config.json"));
+    }
+
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let mut dir = Some(exe_dir);
+            for _ in 0..5 {
+                let Some(current) = dir else {
+                    break;
+                };
+                push_config_candidate(&mut candidates, current.join("config.json"));
+                dir = current.parent();
+            }
+        }
+    }
+
+    candidates
+}
+
+fn push_config_candidate(candidates: &mut Vec<PathBuf>, path: PathBuf) {
+    if !candidates.iter().any(|candidate| candidate == &path) {
+        candidates.push(path);
+    }
+}
+
+fn has_enabled_wechat(path: &Path) -> bool {
+    config_json(path)
+        .map(|json| {
+            json.get("wc_enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+                && json
+                    .get("wc_token")
+                    .and_then(Value::as_str)
+                    .map(|token| !token.trim().is_empty())
+                    .unwrap_or(false)
+        })
+        .unwrap_or(false)
+}
+
+fn has_wechat_token(path: &Path) -> bool {
+    config_json(path)
+        .and_then(|json| {
+            json.get("wc_token")
+                .and_then(Value::as_str)
+                .map(|token| !token.trim().is_empty())
+        })
+        .unwrap_or(false)
+}
+
+fn config_json(path: &Path) -> Option<Value> {
+    let data = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&data).ok()
 }
 
 fn parse_u32(value: &str, fallback: u32) -> u32 {
@@ -463,4 +571,13 @@ fn parse_string_list(value: &str) -> Vec<String> {
         .filter(|item| !item.is_empty())
         .map(ToString::to_string)
         .collect()
+}
+
+fn migrate_legacy_ai_group_endpoint(config: &mut Config) {
+    match config.ai_group_hapi_endpoint.trim() {
+        "http://127.0.0.1:9178" | "http://localhost:9178" => {
+            config.ai_group_hapi_endpoint = default_ai_group_hapi_endpoint();
+        }
+        _ => {}
+    }
 }

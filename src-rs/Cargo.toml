@@ -1,6 +1,6 @@
 [package]
 name = "eye-forge-rs"
-version = "1.5.0-beta.2"
+version = "2.0.0-beta.1"
 edition = "2021"
 
 [dependencies]
@@ -12,6 +12,8 @@ dirs = "6"
 log = "0.4"
 simple_logger = "5"
 base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png"] }
+qrcode = "0.14"
 fernet = { version = "0.2", default-features = false, features = ["rustcrypto"] }
 pbkdf2 = "0.12"
 sha2 = "0.10"
@@ -24,11 +26,22 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "mul
 cpal = "0.17.3"
 hound = "3.5.1"
 tray-icon = { version = "0.24.0", default-features = false }
+resvg = { version = "0.47", default-features = false }
+usvg = { version = "0.47", default-features = false }
+tiny-skia = "0.12"
 rustpotter = "3.0.2"
 half = "=2.3.1"
 zip = "2.4.2"
+ailo = { path = "C:/Users/ghr16/Desktop/Projects/AIloaderr" }
+
+[build-dependencies]
+winresource = "0.1"
+
+[patch.crates-io]
+iced_winit = { path = "../vendor/iced_winit-0.13.0-ime" }
+iced_widget = { path = "../vendor/iced_widget-0.13.4-ime" }
 
 [profile.release]
-opt-level = "z"
-lto = true
-codegen-units = 1
+opt-level = 3
+lto = "thin"
+codegen-units = 16

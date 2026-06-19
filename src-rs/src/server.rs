@@ -5,22 +5,22 @@ use axum::{
     body::Body,
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Json as ExtractJson, State,
+        Json as ExtractJson, Query, State,
     },
     http::{header, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use futures_util::StreamExt;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::net::TcpListener;
 use tokio::runtime::Runtime;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::config::Config;
-use crate::{channels, runtime, voice};
+use crate::{channels, runtime, voice, wechat};
 
 pub const GATEWAY_WS_PATH: &str = "/ws";
 
@@ -100,11 +100,23 @@ async fn run_server(config: Config, shutdown: oneshot::Receiver<()>) -> Result<(
         .route("/styles.css", get(styles_css))
         .route("/health", get(health))
         .route("/api/channels", get(channel_status))
-        .route("/api/voice/devices", get(voice_devices))
+        .route("/api/wechat/qr-login", post(wechat_qr_login_start))
+        .route("/api/wechat/qr-status", get(wechat_qr_login_status))
+        .route("/api/ai-group", get(ai_group_get).post(ai_group_save))
+        .route("/api/ai-group/collaborate", post(ai_group_collaborate))
+        .route("/api/codex/status", get(codex_status))
+        .route("/api/codex/task", post(codex_task))
+        .route("/api/opencode/status", get(opencode_status))
+        .route("/api/opencode/task", post(opencode_task))
+        .route("/v1/ai-groups/dispatch", post(ai_group_dispatch))
+        .route("/ai-groups/dispatch", post(ai_group_dispatch))
+        .route("/dispatch", post(ai_group_dispatch))
         .route(
-            "/api/voice/transcribe",
-            axum::routing::post(voice_transcribe),
+            "/api/channel-config",
+            get(channel_config_get).post(channel_config_save),
         )
+        .route("/api/voice/devices", get(voice_devices))
+        .route("/api/voice/transcribe", post(voice_transcribe))
         .route(GATEWAY_WS_PATH, get(ws_handler))
         .with_state(AppState {
             config: Arc::new(config),
@@ -118,8 +130,13 @@ async fn run_server(config: Config, shutdown: oneshot::Receiver<()>) -> Result<(
         .map_err(|error| format!("Rust gateway server error: {error}"))
 }
 
-async fn index() -> Html<&'static str> {
-    Html(include_str!("../../web-ui/index.html"))
+async fn index() -> Response {
+    let mut response = Html(include_str!("../../web-ui/index.html")).into_response();
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("no-store, no-cache, must-revalidate"),
+    );
+    response
 }
 
 async fn app_js() -> Response {
@@ -127,6 +144,10 @@ async fn app_js() -> Response {
     response.headers_mut().insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/javascript; charset=utf-8"),
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("no-store, no-cache, must-revalidate"),
     );
     response
 }
@@ -136,6 +157,10 @@ async fn styles_css() -> Response {
     response.headers_mut().insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("text/css; charset=utf-8"),
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("no-store, no-cache, must-revalidate"),
     );
     response
 }
@@ -148,6 +173,398 @@ async fn channel_status(State(state): State<AppState>) -> impl IntoResponse {
     Json(json!({
         "channels": channels::collect(&state.config)
     }))
+}
+
+#[derive(Debug, Deserialize)]
+struct WechatQrStatusQuery {
+    key: String,
+}
+
+async fn wechat_qr_login_start() -> impl IntoResponse {
+    match wechat::begin_qr_login().await {
+        Ok(session) => {
+            use base64::Engine;
+
+            let image = base64::engine::general_purpose::STANDARD.encode(session.image_bytes);
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "key": session.key,
+                    "image_data_url": format!("data:image/png;base64,{image}"),
+                })),
+            )
+                .into_response()
+        }
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn wechat_qr_login_status(Query(query): Query<WechatQrStatusQuery>) -> impl IntoResponse {
+    match wechat::query_qr_status(&query.key).await {
+        Ok(status) => {
+            if status.status == "confirmed" && !status.token.trim().is_empty() {
+                let mut config = Config::load();
+                config.wc_token = status.token.clone();
+                config.wc_enabled = true;
+                config.save();
+            }
+
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "status": status.status,
+                    "token": status.token,
+                    "bot_id": status.bot_id,
+                    "user_id": status.user_id,
+                })),
+            )
+                .into_response()
+        }
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn channel_config_get() -> impl IntoResponse {
+    let config = Config::load();
+    (
+        StatusCode::OK,
+        Json(json!({
+            "ws_enabled": config.ws_enabled,
+            "ws_host": config.ws_host,
+            "ws_port": config.ws_port,
+            "ws_token": config.ws_token,
+            "wc_enabled": config.wc_enabled,
+            "wc_token": config.wc_token,
+            "wcom_enabled": config.wcom_enabled,
+            "wcom_corp_id": config.wcom_corp_id,
+            "wcom_agent_id": config.wcom_agent_id,
+            "wcom_secret": config.wcom_secret,
+            "wcom_token": config.wcom_token,
+            "wcom_aes_key": config.wcom_aes_key,
+            "dt_enabled": config.dt_enabled,
+            "dt_app_key": config.dt_app_key,
+            "dt_app_secret": config.dt_app_secret,
+            "dt_webhook": config.dt_webhook,
+            "qq_enabled": config.qq_enabled,
+            "qq_mode": config.qq_mode,
+            "qq_ws_host": config.qq_ws_host,
+            "qq_ws_port": config.qq_ws_port,
+            "qq_bot_appid": config.qq_bot_appid,
+            "qq_bot_token": config.qq_bot_token,
+        })),
+    )
+        .into_response()
+}
+
+async fn channel_config_save(
+    ExtractJson(payload): ExtractJson<serde_json::Value>,
+) -> impl IntoResponse {
+    let mut config = Config::load();
+    let kind = payload
+        .get("kind")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+
+    match kind {
+        "gateway" => {
+            config.ws_enabled = json_bool(&payload, "enabled", config.ws_enabled);
+            config.ws_host = json_string(&payload, "host", &config.ws_host);
+            config.ws_port = json_u16(&payload, "port", config.ws_port);
+            config.ws_token = json_string(&payload, "token", &config.ws_token);
+        }
+        "wechat" => {
+            config.wc_enabled = json_bool(&payload, "enabled", config.wc_enabled);
+            config.wc_token = json_string(&payload, "token", &config.wc_token);
+        }
+        "wecom" => {
+            config.wcom_enabled = json_bool(&payload, "enabled", config.wcom_enabled);
+            config.wcom_corp_id = json_string(&payload, "corp_id", &config.wcom_corp_id);
+            config.wcom_agent_id = json_string(&payload, "agent_id", &config.wcom_agent_id);
+            config.wcom_secret = json_string(&payload, "secret", &config.wcom_secret);
+            config.wcom_token = json_string(&payload, "token", &config.wcom_token);
+            config.wcom_aes_key = json_string(&payload, "aes_key", &config.wcom_aes_key);
+        }
+        "dingtalk" => {
+            config.dt_enabled = json_bool(&payload, "enabled", config.dt_enabled);
+            config.dt_app_key = json_string(&payload, "app_key", &config.dt_app_key);
+            config.dt_app_secret = json_string(&payload, "app_secret", &config.dt_app_secret);
+            config.dt_webhook = json_string(&payload, "webhook", &config.dt_webhook);
+        }
+        "qq" => {
+            config.qq_enabled = json_bool(&payload, "enabled", config.qq_enabled);
+            config.qq_mode = json_string(&payload, "mode", &config.qq_mode);
+            config.qq_ws_host = json_string(&payload, "ws_host", &config.qq_ws_host);
+            config.qq_ws_port = json_u16(&payload, "ws_port", config.qq_ws_port);
+            config.qq_bot_appid = json_string(&payload, "bot_appid", &config.qq_bot_appid);
+            config.qq_bot_token = json_string(&payload, "bot_token", &config.qq_bot_token);
+        }
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "unknown channel kind" })),
+            )
+                .into_response();
+        }
+    }
+
+    config.save();
+    (StatusCode::OK, Json(json!({ "ok": true }))).into_response()
+}
+
+fn json_string(payload: &serde_json::Value, key: &str, fallback: &str) -> String {
+    payload
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or(fallback)
+        .trim()
+        .to_string()
+}
+
+fn json_bool(payload: &serde_json::Value, key: &str, fallback: bool) -> bool {
+    payload
+        .get(key)
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(fallback)
+}
+
+fn json_u16(payload: &serde_json::Value, key: &str, fallback: u16) -> u16 {
+    payload
+        .get(key)
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| u16::try_from(value).ok())
+        .unwrap_or(fallback)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AiGroupMember {
+    name: String,
+    role: String,
+    endpoint: Option<String>,
+    kind: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AiGroupPayload {
+    enabled: bool,
+    name: String,
+    people: Vec<AiGroupMember>,
+    agents: Vec<AiGroupMember>,
+    hapi_endpoint: String,
+    strategy: String,
+}
+
+async fn ai_group_get() -> impl IntoResponse {
+    let config = Config::load();
+    (StatusCode::OK, Json(ai_group_from_config(&config))).into_response()
+}
+
+async fn ai_group_save(ExtractJson(payload): ExtractJson<AiGroupPayload>) -> impl IntoResponse {
+    let mut config = Config::load();
+    config.ai_groups_enabled = payload.enabled;
+    config.ai_group_name = payload.name.trim().to_string();
+    config.ai_group_people = members_to_lines(&payload.people, false);
+    config.ai_group_hapi_endpoint = payload.hapi_endpoint.trim().to_string();
+    config.ai_group_strategy = payload.strategy.trim().to_string();
+    config.ai_group_openclaw_members = agents_to_lines(&payload.agents, "openclaw");
+    config.ai_group_astrbot_members = agents_to_lines(&payload.agents, "astrbot");
+    config.ai_group_opencode_members = agents_to_lines(&payload.agents, "opencode");
+    config.ai_group_codex_members = agents_to_lines(&payload.agents, "codex");
+    config.ai_group_claude_code_members = agents_to_lines(&payload.agents, "claude");
+    config.ai_group_api_members = agents_to_lines(&payload.agents, "api");
+    config.save();
+
+    (StatusCode::OK, Json(ai_group_from_config(&config))).into_response()
+}
+
+async fn ai_group_dispatch(
+    State(state): State<AppState>,
+    ExtractJson(payload): ExtractJson<serde_json::Value>,
+) -> impl IntoResponse {
+    match crate::ai_groups::dispatch_external_request(&state.config, payload).await {
+        Ok(Some(plan)) => (StatusCode::OK, Json(json!({ "action_plan": plan }))).into_response(),
+        Ok(None) => (StatusCode::OK, Json(json!({ "action_plan": null }))).into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct AiGroupCollaborateRequest {
+    task: String,
+}
+
+async fn ai_group_collaborate(
+    ExtractJson(payload): ExtractJson<AiGroupCollaborateRequest>,
+) -> impl IntoResponse {
+    let config = Config::load();
+    match crate::ai_groups::collaborate_task(&config, &payload.task).await {
+        Ok(result) => (StatusCode::OK, Json(json!(result))).into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response(),
+    }
+}
+
+async fn codex_status() -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        Json(crate::ai_groups::builtin_agent_status("codex")),
+    )
+        .into_response()
+}
+
+async fn opencode_status() -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        Json(crate::ai_groups::builtin_agent_status("opencode")),
+    )
+        .into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct BuiltinAgentTaskRequest {
+    task: String,
+}
+
+async fn codex_task(
+    ExtractJson(payload): ExtractJson<BuiltinAgentTaskRequest>,
+) -> impl IntoResponse {
+    builtin_agent_task("codex", payload).await
+}
+
+async fn opencode_task(
+    ExtractJson(payload): ExtractJson<BuiltinAgentTaskRequest>,
+) -> impl IntoResponse {
+    builtin_agent_task("opencode", payload).await
+}
+
+async fn builtin_agent_task(kind: &str, payload: BuiltinAgentTaskRequest) -> Response {
+    if payload.task.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "task is empty" })),
+        )
+            .into_response();
+    }
+
+    let config = Config::load();
+    match crate::ai_groups::dispatch_builtin_agent(kind, &payload.task, config.shell_enabled).await
+    {
+        Ok(Some(plan)) => (StatusCode::OK, Json(json!({ "action_plan": plan }))).into_response(),
+        Ok(None) => (StatusCode::OK, Json(json!({ "action_plan": null }))).into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response(),
+    }
+}
+
+fn ai_group_from_config(config: &Config) -> AiGroupPayload {
+    let mut agents = Vec::new();
+    agents.extend(lines_to_members(
+        &config.ai_group_openclaw_members,
+        "openclaw",
+        true,
+    ));
+    agents.extend(lines_to_members(
+        &config.ai_group_astrbot_members,
+        "astrbot",
+        true,
+    ));
+    agents.extend(lines_to_members(
+        &config.ai_group_opencode_members,
+        "opencode",
+        true,
+    ));
+    agents.extend(lines_to_members(
+        &config.ai_group_codex_members,
+        "codex",
+        true,
+    ));
+    agents.extend(lines_to_members(
+        &config.ai_group_claude_code_members,
+        "claude",
+        true,
+    ));
+    agents.extend(lines_to_members(&config.ai_group_api_members, "api", true));
+
+    AiGroupPayload {
+        enabled: config.ai_groups_enabled,
+        name: config.ai_group_name.clone(),
+        people: lines_to_members(&config.ai_group_people, "person", false),
+        agents,
+        hapi_endpoint: config.ai_group_hapi_endpoint.clone(),
+        strategy: config.ai_group_strategy.clone(),
+    }
+}
+
+fn lines_to_members(source: &str, kind: &str, endpoint_is_status: bool) -> Vec<AiGroupMember> {
+    source
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| {
+            let mut parts = line.split('|').map(str::trim);
+            let name = parts.next().unwrap_or("Member").to_string();
+            let role = parts.next().unwrap_or("").to_string();
+            let third = parts.next().unwrap_or("").to_string();
+            AiGroupMember {
+                name,
+                role: if role.is_empty() {
+                    if endpoint_is_status { "AI" } else { "Member" }.to_string()
+                } else {
+                    role
+                },
+                endpoint: (!third.is_empty()).then_some(third),
+                kind: Some(kind.to_string()),
+            }
+        })
+        .collect()
+}
+
+fn members_to_lines(members: &[AiGroupMember], include_endpoint: bool) -> String {
+    members
+        .iter()
+        .filter(|member| !member.name.trim().is_empty())
+        .map(|member| {
+            if include_endpoint {
+                format!(
+                    "{} | {} | {}",
+                    member.name.trim(),
+                    member.role.trim(),
+                    member.endpoint.as_deref().unwrap_or("").trim()
+                )
+            } else {
+                format!(
+                    "{} | {} | {}",
+                    member.name.trim(),
+                    member.role.trim(),
+                    member.endpoint.as_deref().unwrap_or("本地备注").trim()
+                )
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn agents_to_lines(agents: &[AiGroupMember], kind: &str) -> String {
+    let normalized = kind.to_ascii_lowercase();
+    let selected = agents
+        .iter()
+        .filter(|agent| {
+            agent
+                .kind
+                .as_deref()
+                .unwrap_or("codex")
+                .to_ascii_lowercase()
+                .contains(&normalized)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    members_to_lines(&selected, true)
 }
 
 async fn voice_devices() -> impl IntoResponse {
@@ -273,7 +690,43 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                             ))
                             .await;
 
-                        let result = runtime::execute_task(task, (*state.config).clone()).await;
+                        let (event_tx, mut event_rx) =
+                            mpsc::unbounded_channel::<runtime::RuntimeEvent>();
+                        let task_config = (*state.config).clone();
+                        let mut execution = tokio::spawn(async move {
+                            let mut reporter = move |event| {
+                                let _ = event_tx.send(event);
+                            };
+                            runtime::execute_task_with_events(task, task_config, &mut reporter)
+                                .await
+                        });
+
+                        let result = loop {
+                            tokio::select! {
+                                event = event_rx.recv() => {
+                                    if let Some(event) = event {
+                                        let _ = socket
+                                            .send(Message::Text(
+                                                json!({
+                                                    "type": "status",
+                                                    "kind": format!("{:?}", event.kind).to_ascii_lowercase(),
+                                                    "title": event.title,
+                                                    "message": event.message
+                                                })
+                                                .to_string(),
+                                            ))
+                                            .await;
+                                    }
+                                }
+                                result = &mut execution => {
+                                    break match result {
+                                        Ok(value) => value,
+                                        Err(error) => Err(format!("task worker failed: {error}")),
+                                    };
+                                }
+                            }
+                        };
+
                         let response = match result {
                             Ok(outcome) => json!({
                                 "type": "result",

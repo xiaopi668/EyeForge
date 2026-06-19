@@ -56,9 +56,15 @@ fn wechat(config: &Config) -> ChannelStatus {
         label: "WeChat iLink".into(),
         enabled: config.wc_enabled,
         configured,
-        status: resolve_pending_status(config.wc_enabled, configured),
+        status: if !config.wc_enabled {
+            "disabled".into()
+        } else if configured {
+            "ready".into()
+        } else {
+            "needs_config".into()
+        },
         detail: if configured {
-            "Token configured, but the Rust adapter is not implemented yet.".into()
+            "WeChat iLink token configured. Incoming message long-poll receiver will run while enabled.".into()
         } else {
             "Missing bot token.".into()
         },

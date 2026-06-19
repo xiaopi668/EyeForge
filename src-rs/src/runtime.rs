@@ -1,4 +1,6 @@
+use std::collections::VecDeque;
 use std::io::Cursor;
+use std::sync::{Mutex, OnceLock};
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
@@ -13,8 +15,62 @@ use tokio::time::{sleep, timeout, Duration};
 use xcap::{image::DynamicImage, image::ImageFormat, Monitor};
 
 use crate::ai_groups;
+use crate::commands::{self, CommandEffect};
 use crate::config::Config;
 use crate::llm;
+
+const MAX_AI_STEPS: usize = 20;
+const MAX_RUNTIME_EVENTS: usize = 200;
+
+#[derive(Debug, Clone)]
+pub struct RuntimeEvent {
+    pub kind: RuntimeEventKind,
+    pub title: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeEventKind {
+    Running,
+    Step,
+    Success,
+    Error,
+}
+
+static RUNTIME_EVENTS: OnceLock<Mutex<VecDeque<RuntimeEvent>>> = OnceLock::new();
+
+fn event_queue() -> &'static Mutex<VecDeque<RuntimeEvent>> {
+    RUNTIME_EVENTS.get_or_init(|| Mutex::new(VecDeque::new()))
+}
+
+pub fn drain_events() -> Vec<RuntimeEvent> {
+    let Ok(mut queue) = event_queue().lock() else {
+        return Vec::new();
+    };
+    queue.drain(..).collect()
+}
+
+fn queue_event(event: RuntimeEvent) {
+    if let Ok(mut queue) = event_queue().lock() {
+        queue.push_back(event);
+        while queue.len() > MAX_RUNTIME_EVENTS {
+            queue.pop_front();
+        }
+    }
+}
+
+fn emit_event<F>(reporter: &mut F, kind: RuntimeEventKind, title: &str, message: impl Into<String>)
+where
+    F: FnMut(RuntimeEvent) + Send,
+{
+    let event = RuntimeEvent {
+        kind,
+        title: title.into(),
+        message: message.into(),
+    };
+    queue_event(event.clone());
+    reporter(event);
+}
 
 #[derive(Debug, Clone)]
 pub struct NativeOutcome {
@@ -71,8 +127,64 @@ enum ActionSpec {
 }
 
 pub async fn execute_task(task: String, config: Config) -> Result<NativeOutcome, String> {
+    let mut reporter = |_| {};
+    execute_task_with_events(task, config, &mut reporter).await
+}
+
+pub async fn execute_task_with_events<F>(
+    task: String,
+    config: Config,
+    reporter: &mut F,
+) -> Result<NativeOutcome, String>
+where
+    F: FnMut(RuntimeEvent) + Send,
+{
+    emit_event(
+        reporter,
+        RuntimeEventKind::Running,
+        "执行",
+        "任务已开始，正在执行中...",
+    );
+    let result = execute_task_inner(task, config, reporter).await;
+    match &result {
+        Ok(outcome) => emit_event(
+            reporter,
+            RuntimeEventKind::Success,
+            "完成",
+            outcome.message.clone(),
+        ),
+        Err(error) => emit_event(
+            reporter,
+            RuntimeEventKind::Error,
+            "失败",
+            format!("执行失败：{error}"),
+        ),
+    }
+    result
+}
+
+async fn execute_task_inner<F>(
+    task: String,
+    mut config: Config,
+    reporter: &mut F,
+) -> Result<NativeOutcome, String>
+where
+    F: FnMut(RuntimeEvent) + Send,
+{
     let trimmed = task.trim().to_string();
     let mut transcript = vec![format!("Task received: {trimmed}")];
+
+    if let Some(command_result) = commands::execute(&trimmed, &mut config) {
+        let outcome = command_result?;
+        apply_command_effects(&config, &outcome.effects);
+        transcript.push(format!("Command executed: {}", outcome.title));
+        return Ok(NativeOutcome {
+            status: "success".into(),
+            message: outcome.message,
+            transcript,
+            data: None,
+        });
+    }
 
     if looks_like_json(&trimmed) {
         let actions = parse_action_specs(&trimmed)?;
@@ -80,10 +192,16 @@ pub async fn execute_task(task: String, config: Config) -> Result<NativeOutcome,
             "Parsed structured action plan with {} step(s)",
             actions.len()
         ));
-        return execute_action_plan(actions, &config, transcript).await;
+        return execute_action_plan(actions, &config, transcript, reporter).await;
     }
 
     if let Some(command) = trimmed.strip_prefix("shell:") {
+        emit_event(
+            reporter,
+            RuntimeEventKind::Step,
+            "动作",
+            format!("执行 Shell：{command}"),
+        );
         let message = execute_shell(command.trim(), 30, &config, &mut transcript).await?;
         return Ok(NativeOutcome {
             status: "success".into(),
@@ -95,6 +213,12 @@ pub async fn execute_task(task: String, config: Config) -> Result<NativeOutcome,
 
     if let Some(duration) = trimmed.strip_prefix("wait:") {
         let seconds = parse_wait_seconds(duration.trim(), &config)?;
+        emit_event(
+            reporter,
+            RuntimeEventKind::Step,
+            "动作",
+            format!("等待 {seconds} 秒"),
+        );
         let message = execute_wait(seconds, &config, &mut transcript).await?;
         return Ok(NativeOutcome {
             status: "success".into(),
@@ -105,6 +229,12 @@ pub async fn execute_task(task: String, config: Config) -> Result<NativeOutcome,
     }
 
     if let Some(target) = trimmed.strip_prefix("open:") {
+        emit_event(
+            reporter,
+            RuntimeEventKind::Step,
+            "动作",
+            format!("打开：{}", target.trim()),
+        );
         let message = execute_open(target.trim(), &config, &mut transcript).await?;
         return Ok(NativeOutcome {
             status: "success".into(),
@@ -114,46 +244,18 @@ pub async fn execute_task(task: String, config: Config) -> Result<NativeOutcome,
         });
     }
 
-    match ai_groups::dispatch_task(&config, &trimmed).await {
-        Ok(Some(ai_group_plan)) => {
-            transcript.push(format!("AI group hapi plan received:\n{ai_group_plan}"));
-            let actions = parse_action_specs(&ai_group_plan)?;
-            transcript.push(format!(
-                "Compiled AI group hapi plan into {} executable action(s)",
-                actions.len()
-            ));
-            return execute_action_plan(actions, &config, transcript).await;
-        }
-        Ok(None) => {
-            transcript.push("AI groups disabled or returned no plan; falling back to LLM".into());
-        }
-        Err(error) => {
-            transcript.push(format!(
-                "AI group hapi dispatch failed; falling back to LLM: {error}"
-            ));
-        }
-    }
-
-    transcript.push(format!(
-        "Planning with Rust-native LLM provider: {}",
-        config.llm_provider
-    ));
-
-    let llm_plan = llm::plan_actions(&trimmed, &config).await?;
-    transcript.push(format!("LLM plan received:\n{llm_plan}"));
-    let actions = parse_action_specs(&llm_plan)?;
-    transcript.push(format!(
-        "Compiled LLM plan into {} executable action(s)",
-        actions.len()
-    ));
-    return execute_action_plan(actions, &config, transcript).await;
+    execute_ai_task_stepwise(&trimmed, &config, transcript, reporter).await
 }
 
-async fn execute_action_plan(
+async fn execute_action_plan<F>(
     actions: Vec<ActionSpec>,
     config: &Config,
     mut transcript: Vec<String>,
-) -> Result<NativeOutcome, String> {
+    reporter: &mut F,
+) -> Result<NativeOutcome, String>
+where
+    F: FnMut(RuntimeEvent) + Send,
+{
     let mut last_message = if config.language == "zh" {
         "动作计划已执行".to_string()
     } else {
@@ -161,7 +263,25 @@ async fn execute_action_plan(
     };
     let mut last_data: Option<Value> = None;
 
+    let (actions, completion_result) = split_executable_actions(actions);
+    if actions.is_empty() {
+        let message = completion_result.unwrap_or(last_message);
+        emit_event(reporter, RuntimeEventKind::Success, "完成", message.clone());
+        return Ok(NativeOutcome {
+            status: "success".into(),
+            message,
+            transcript,
+            data: last_data,
+        });
+    }
+
     for (index, action) in actions.into_iter().enumerate() {
+        emit_event(
+            reporter,
+            RuntimeEventKind::Step,
+            "动作",
+            format!("步骤 {}：{}", index + 1, action_summary(&action)),
+        );
         transcript.push(format!("Action {} => {:?}", index + 1, action));
 
         match action {
@@ -218,6 +338,12 @@ async fn execute_action_plan(
                 last_data = Some(screenshot.1);
             }
             ActionSpec::Complete { result } => {
+                emit_event(
+                    reporter,
+                    RuntimeEventKind::Success,
+                    "完成",
+                    result.clone().unwrap_or_else(|| last_message.clone()),
+                );
                 return Ok(NativeOutcome {
                     status: "success".into(),
                     message: result.unwrap_or(last_message),
@@ -226,14 +352,290 @@ async fn execute_action_plan(
                 });
             }
         }
+        emit_event(
+            reporter,
+            RuntimeEventKind::Running,
+            "结果",
+            last_message.clone(),
+        );
     }
 
     Ok(NativeOutcome {
         status: "success".into(),
-        message: last_message,
+        message: completion_result.unwrap_or(last_message),
         transcript,
         data: last_data,
     })
+}
+
+async fn execute_ai_task_stepwise<F>(
+    task: &str,
+    config: &Config,
+    mut transcript: Vec<String>,
+    reporter: &mut F,
+) -> Result<NativeOutcome, String>
+where
+    F: FnMut(RuntimeEvent) + Send,
+{
+    let mut history = Vec::new();
+    let mut last_message = if config.language == "zh" {
+        "AI 自适应执行已开始".to_string()
+    } else {
+        "AI adaptive execution started".to_string()
+    };
+    let mut last_data: Option<Value> = None;
+
+    transcript.push(format!(
+        "AI task will run adaptively; max feedback steps: {MAX_AI_STEPS}"
+    ));
+
+    for step in 1..=MAX_AI_STEPS {
+        let step_task = build_adaptive_task_prompt(task, &history, step);
+        transcript.push(format!("Step {step}: planning adaptive next action(s)"));
+        emit_event(
+            reporter,
+            RuntimeEventKind::Running,
+            "规划",
+            format!("第 {step} 步：正在分析下一步动作"),
+        );
+
+        let plan = plan_next_ai_step(&step_task, config, &mut transcript).await?;
+        transcript.push(format!("Step {step} plan received:\n{plan}"));
+        emit_event(
+            reporter,
+            RuntimeEventKind::Running,
+            "规划完成",
+            format!("第 {step} 步：已收到动作计划"),
+        );
+
+        let mut actions = parse_action_specs(&plan)?;
+        if actions.is_empty() {
+            return Err("AI returned an empty action plan".into());
+        }
+        let executable_count = actions
+            .iter()
+            .filter(|action| is_executable_action(action))
+            .count();
+        if executable_count > 1 {
+            transcript.push(format!(
+                "Step {step}: AI chose batch mode with {} executable actions",
+                executable_count
+            ));
+            emit_event(
+                reporter,
+                RuntimeEventKind::Running,
+                "执行模式",
+                format!(
+                    "AI 认为后续步骤明确，选择一气呵成执行 {} 个动作",
+                    executable_count
+                ),
+            );
+            return execute_action_plan(actions, config, transcript, reporter).await;
+        }
+        if executable_count == 1 && actions.len() > 1 {
+            transcript.push(format!(
+                "Step {step}: AI returned one executable action plus completion metadata; continuing feedback mode"
+            ));
+            actions.retain(is_executable_action);
+        }
+
+        let action = actions.remove(0);
+        let action_label = format!("{action:?}");
+
+        if let ActionSpec::Complete { result } = action {
+            emit_event(
+                reporter,
+                RuntimeEventKind::Success,
+                "完成",
+                result.clone().unwrap_or_else(|| last_message.clone()),
+            );
+            return Ok(NativeOutcome {
+                status: "success".into(),
+                message: result.unwrap_or(last_message),
+                transcript,
+                data: last_data,
+            });
+        }
+
+        emit_event(
+            reporter,
+            RuntimeEventKind::Step,
+            "动作",
+            format!("第 {step} 步：{}", action_summary(&action)),
+        );
+        let (message, data) = execute_single_action(action, step, config, &mut transcript).await?;
+        history.push(format!("Step {step}: {action_label} => {message}"));
+        last_message = message;
+        emit_event(
+            reporter,
+            RuntimeEventKind::Running,
+            "步骤结果",
+            format!("第 {step} 步完成：{last_message}"),
+        );
+        if data.is_some() {
+            last_data = data;
+        }
+    }
+
+    Ok(NativeOutcome {
+        status: "success".into(),
+        message: if config.language == "zh" {
+            format!("已达到 {MAX_AI_STEPS} 步上限，已暂停。最后结果：{last_message}")
+        } else {
+            format!("Reached the {MAX_AI_STEPS}-step limit and paused. Last result: {last_message}")
+        },
+        transcript,
+        data: last_data,
+    })
+}
+
+fn apply_command_effects(config: &Config, effects: &[CommandEffect]) {
+    if effects.contains(&CommandEffect::SaveConfig) {
+        config.save();
+    }
+    if effects.contains(&CommandEffect::RestartGateway) {
+        let _ = crate::server::restart(config);
+    }
+    if effects.contains(&CommandEffect::RestartAiGroups) {
+        let _ = crate::ai_groups::restart(config);
+    }
+    if effects.contains(&CommandEffect::StopAiGroups) {
+        crate::ai_groups::stop();
+    }
+}
+
+async fn plan_next_ai_step(
+    step_task: &str,
+    config: &Config,
+    transcript: &mut Vec<String>,
+) -> Result<String, String> {
+    if config.use_vision {
+        transcript.push("Capturing screenshot for this step".into());
+        let (_, screenshot_data) = execute_screenshot(None, None, None, None, transcript).await?;
+
+        let screenshot_plan = screenshot_data
+            .get("screenshot_base64")
+            .and_then(Value::as_str)
+            .zip(screenshot_data.get("width").and_then(Value::as_u64))
+            .zip(screenshot_data.get("height").and_then(Value::as_u64))
+            .map(|((base64_png, width), height)| {
+                llm::plan_actions_with_screenshot(
+                    step_task,
+                    config,
+                    llm::ScreenshotContext {
+                        base64_png,
+                        width: width as u32,
+                        height: height as u32,
+                    },
+                )
+            });
+
+        if let Some(plan) = screenshot_plan {
+            match plan.await {
+                Ok(plan) => return Ok(plan),
+                Err(error) => {
+                    transcript.push(format!(
+                        "Vision step planning failed; falling back to text-only planning: {error}"
+                    ));
+                }
+            }
+        } else {
+            transcript.push(
+                "Screenshot payload was incomplete; falling back to text-only planning".into(),
+            );
+        }
+    } else {
+        match ai_groups::dispatch_task(config, step_task).await {
+            Ok(Some(plan)) => return Ok(plan),
+            Ok(None) => {
+                transcript
+                    .push("AI groups disabled or returned no step; falling back to LLM".into());
+            }
+            Err(error) => {
+                transcript.push(format!(
+                    "AI group step dispatch failed; falling back to LLM: {error}"
+                ));
+            }
+        }
+    }
+
+    transcript.push(format!(
+        "Planning one step with Rust-native LLM provider: {}",
+        config.llm_provider
+    ));
+    llm::plan_actions(step_task, config).await
+}
+
+async fn execute_single_action(
+    action: ActionSpec,
+    step: usize,
+    config: &Config,
+    transcript: &mut Vec<String>,
+) -> Result<(String, Option<Value>), String> {
+    transcript.push(format!("Step {step} action => {:?}", action));
+
+    match action {
+        ActionSpec::Shell {
+            command,
+            timeout_secs,
+        } => execute_shell(&command, timeout_secs.unwrap_or(30), config, transcript)
+            .await
+            .map(|message| (message, None)),
+        ActionSpec::Wait { seconds } => execute_wait(seconds, config, transcript)
+            .await
+            .map(|message| (message, None)),
+        ActionSpec::Open { target } => execute_open(&target, config, transcript)
+            .await
+            .map(|message| (message, None)),
+        ActionSpec::Click {
+            x,
+            y,
+            button,
+            clicks,
+        } => execute_click(x, y, button.as_deref(), clicks.unwrap_or(1), transcript)
+            .await
+            .map(|message| (message, None)),
+        ActionSpec::TypeText { text } => execute_type_text(&text, transcript)
+            .await
+            .map(|message| (message, None)),
+        ActionSpec::Hotkey { keys } => execute_hotkey(&keys, transcript)
+            .await
+            .map(|message| (message, None)),
+        ActionSpec::Scroll { clicks, axis } => execute_scroll(clicks, axis.as_deref(), transcript)
+            .await
+            .map(|message| (message, None)),
+        ActionSpec::Screenshot {
+            x,
+            y,
+            width,
+            height,
+        } => {
+            let (message, data) = execute_screenshot(x, y, width, height, transcript).await?;
+            Ok((message, Some(data)))
+        }
+        ActionSpec::Complete { result } => Ok((
+            result.unwrap_or_else(|| {
+                if config.language == "zh" {
+                    "任务完成".into()
+                } else {
+                    "Task complete".into()
+                }
+            }),
+            None,
+        )),
+    }
+}
+
+fn build_adaptive_task_prompt(task: &str, history: &[String], step: usize) -> String {
+    let history_text = if history.is_empty() {
+        "No actions have been executed yet.".to_string()
+    } else {
+        history.join("\n")
+    };
+
+    format!(
+        "Original task:\n{task}\n\nExecution mode: adaptive.\nCurrent feedback round: {step}.\n\nExecuted history:\n{history_text}\n\nChoose the execution style yourself:\n- If the next steps are already certain and do not depend on observing intermediate results, return a batch JSON plan with multiple safe actions.\n- If the next step is uncertain or depends on screen feedback after an action, return exactly one next action.\n- If the task is fully finished, return only {{\"type\":\"complete\",\"result\":\"...\"}} or put complete as the final action in a batch plan.\n\nReturn JSON only."
+    )
 }
 
 fn parse_action_specs(input: &str) -> Result<Vec<ActionSpec>, String> {
@@ -242,6 +644,69 @@ fn parse_action_specs(input: &str) -> Result<Vec<ActionSpec>, String> {
         .or_else(|_| serde_json::from_str::<Vec<ActionSpec>>(input))
         .or_else(|_| serde_json::from_str::<ActionSpec>(input).map(|action| vec![action]))
         .map_err(|error| format!("Invalid action JSON: {error}"))
+}
+
+fn action_summary(action: &ActionSpec) -> String {
+    match action {
+        ActionSpec::Shell { command, .. } => format!("执行 Shell：{command}"),
+        ActionSpec::Wait { seconds } => format!("等待 {seconds} 秒"),
+        ActionSpec::Open { target } => format!("打开 {target}"),
+        ActionSpec::Click {
+            x,
+            y,
+            button,
+            clicks,
+        } => format!(
+            "点击 ({x}, {y})，按钮 {}，{} 次",
+            button.as_deref().unwrap_or("left"),
+            clicks.unwrap_or(1)
+        ),
+        ActionSpec::TypeText { text } => format!("输入文本（{} 个字符）", text.chars().count()),
+        ActionSpec::Hotkey { keys } => format!("发送快捷键 {}", keys.join("+")),
+        ActionSpec::Scroll { clicks, axis } => {
+            format!(
+                "滚动 {clicks}，方向 {}",
+                axis.as_deref().unwrap_or("vertical")
+            )
+        }
+        ActionSpec::Screenshot {
+            x,
+            y,
+            width,
+            height,
+        } => match (x, y, width, height) {
+            (Some(x), Some(y), Some(width), Some(height)) => {
+                format!("截图区域 ({x}, {y}) {width}x{height}")
+            }
+            _ => "查看当前屏幕".into(),
+        },
+        ActionSpec::Complete { result } => result
+            .as_deref()
+            .map(|result| format!("完成：{result}"))
+            .unwrap_or_else(|| "完成任务".into()),
+    }
+}
+
+fn is_executable_action(action: &ActionSpec) -> bool {
+    !matches!(action, ActionSpec::Complete { .. })
+}
+
+fn split_executable_actions(actions: Vec<ActionSpec>) -> (Vec<ActionSpec>, Option<String>) {
+    let mut executable = Vec::new();
+    let mut completion = None;
+
+    for action in actions {
+        match action {
+            ActionSpec::Complete { result } => {
+                if result.is_some() {
+                    completion = result;
+                }
+            }
+            action => executable.push(action),
+        }
+    }
+
+    (executable, completion)
 }
 
 fn looks_like_json(input: &str) -> bool {
@@ -254,6 +719,14 @@ async fn execute_shell(
     config: &Config,
     transcript: &mut Vec<String>,
 ) -> Result<String, String> {
+    if !config.shell_enabled {
+        return Err(if config.language == "zh" {
+            "Shell 命令开关未开启".into()
+        } else {
+            "Shell commands are disabled".into()
+        });
+    }
+
     if command.is_empty() {
         return Err(if config.language == "zh" {
             "shell: 后面缺少命令".into()
@@ -328,6 +801,15 @@ async fn execute_open(
     config: &Config,
     transcript: &mut Vec<String>,
 ) -> Result<String, String> {
+    if !config.shell_enabled {
+        return Err(if config.language == "zh" {
+            "Shell 关闭时已禁用 open 启动器；请使用鼠标和键盘动作。".into()
+        } else {
+            "Open launcher actions are disabled while shell is off; use mouse and keyboard actions instead."
+                .into()
+        });
+    }
+
     if target.is_empty() {
         return Err(if config.language == "zh" {
             "open: 后面缺少目标".into()
@@ -578,10 +1060,20 @@ fn map_key(value: &str) -> Result<Key, String> {
 }
 
 #[cfg(target_os = "windows")]
-async fn run_system_shell(command: &str) -> std::io::Result<std::process::Output> {
-    Command::new("powershell")
+fn hide_child_window(command: &mut Command) {
+    command.creation_flags(0x08000000);
+}
+
+#[cfg(target_os = "windows")]
+async fn run_system_shell(script: &str) -> std::io::Result<std::process::Output> {
+    let mut command = Command::new("powershell");
+    hide_child_window(&mut command);
+    command
+        .arg("-NoProfile")
+        .arg("-WindowStyle")
+        .arg("Hidden")
         .arg("-Command")
-        .arg(command)
+        .arg(script)
         .output()
         .await
 }
@@ -593,7 +1085,9 @@ async fn run_system_shell(command: &str) -> std::io::Result<std::process::Output
 
 #[cfg(target_os = "windows")]
 async fn open_target(target: &str) -> std::io::Result<()> {
-    Command::new("cmd")
+    let mut command = Command::new("cmd");
+    hide_child_window(&mut command);
+    command
         .args(["/C", "start", "", target])
         .spawn()?
         .wait()
@@ -656,6 +1150,30 @@ mod tests {
         )
         .unwrap();
         assert_eq!(parsed.len(), 2);
+    }
+
+    #[test]
+    fn completion_marker_does_not_count_as_batch_action() {
+        let parsed = parse_action_specs(
+            r#"{"actions":[{"type":"click","x":1,"y":2},{"type":"complete","result":"ok"}]}"#,
+        )
+        .unwrap();
+        let executable_count = parsed
+            .iter()
+            .filter(|action| is_executable_action(action))
+            .count();
+        assert_eq!(executable_count, 1);
+    }
+
+    #[test]
+    fn completion_marker_cannot_truncate_batch_actions() {
+        let parsed = parse_action_specs(
+            r#"{"actions":[{"type":"click","x":1,"y":2},{"type":"complete","result":"ok"},{"type":"type","text":"hello"},{"type":"hotkey","keys":["enter"]}]}"#,
+        )
+        .unwrap();
+        let (executable, completion) = split_executable_actions(parsed);
+        assert_eq!(executable.len(), 3);
+        assert_eq!(completion.as_deref(), Some("ok"));
     }
 
     #[test]

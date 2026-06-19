@@ -66,14 +66,4 @@ impl Theme {
     }
 }
 
-impl iced::application::StyleSheet for Theme {
-    type Style = ();
-
-    fn appearance(&self, _style: &Self::Style) -> iced::application::Appearance {
-        iced::application::Appearance {
-            background_color: self.bg_main(),
-            text_color: self.fg(),
-            ..iced::application::Appearance::default()
-        }
-    }
-}
+// StyleSheet 已通过 main.rs 的 theme 函数实现，此处不再需要

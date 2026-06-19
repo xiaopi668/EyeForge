@@ -6,3 +6,4 @@ logs/
 /setup_stub.cs
 /src-rs/target/
 /src-rs-demo*.png
+/hapi-server/node_modules/

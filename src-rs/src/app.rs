@@ -3,7 +3,7 @@ use iced::widget::{
     button, checkbox, column, container, horizontal_rule, image, pick_list, row, scrollable, text,
     text_input,
 };
-use iced::{time, window, Alignment, Background, Border, Color, ContentFit, Element, Fill, Length};
+use iced::{time, window, Alignment, Background, Border, Color, ContentFit, Element, Fill, Length, Padding};
 use iced::{Subscription, Task, Theme};
 use std::time::Duration;
 
@@ -305,6 +305,9 @@ pub enum Message {
     BackendFinished(Result<NativeOutcome, String>),
     WindowDiscovered(Option<window::Id>),
     WindowCloseRequested(window::Id),
+    WindowMinimizePressed,
+    WindowMaximizePressed,
+    WindowClosePressed,
     TrayTick,
     ShowWindowById(Option<window::Id>),
 }
@@ -325,6 +328,7 @@ pub struct EyeForge {
     wechat_qr_image: Option<image::Handle>,
     wechat_qr_status: Option<String>,
     main_window_id: Option<window::Id>,
+    window_maximized: bool,
 }
 
 impl Default for EyeForge {
@@ -353,6 +357,7 @@ impl Default for EyeForge {
             wechat_qr_image: None,
             wechat_qr_status: None,
             main_window_id: None,
+            window_maximized: false,
         }
     }
 }
@@ -385,6 +390,7 @@ impl EyeForge {
             wechat_qr_image: None,
             wechat_qr_status: None,
             main_window_id: None,
+            window_maximized: false,
         };
 
         let gateway_status = server::restart(&app.config);
@@ -486,6 +492,27 @@ impl EyeForge {
                     "Hidden to the system tray. Right-click the tray icon to show or exit.".into()
                 };
                 return window::change_mode(id, window::Mode::Hidden);
+            }
+            Message::WindowMinimizePressed => {
+                if let Some(id) = self.main_window_id {
+                    return window::minimize(id, true);
+                }
+            }
+            Message::WindowMaximizePressed => {
+                if let Some(id) = self.main_window_id {
+                    self.window_maximized = !self.window_maximized;
+                    return window::maximize(id, self.window_maximized);
+                }
+            }
+            Message::WindowClosePressed => {
+                if let Some(id) = self.main_window_id {
+                    self.status_text = if self.language().is_zh() {
+                        "已隐藏到系统托盘，右键托盘图标可显示或退出".into()
+                    } else {
+                        "Hidden to system tray. Right-click to show or exit.".into()
+                    };
+                    return window::change_mode(id, window::Mode::Hidden);
+                }
             }
             Message::TrayTick => match crate::tray::next_command() {
                 Some(crate::tray::TrayCommand::Show) => {
@@ -910,54 +937,55 @@ impl EyeForge {
     pub fn view(&self) -> Element<'_, Message> {
         crate::tray::ensure_tray();
 
-        let navigation = column![
-            nav_button(
-                self.t("首页", "Home"),
-                self.current_page == Page::Home,
-                Page::Home
-            ),
-            nav_button(
-                self.t("设置", "Settings"),
-                self.current_page == Page::Settings,
-                Page::Settings
-            ),
-            nav_button(
-                self.t("Skill", "Skills"),
-                self.current_page == Page::Skills,
-                Page::Skills
-            ),
-            nav_button(
-                self.t("AI 群组", "AI Groups"),
-                self.current_page == Page::AiGroups,
-                Page::AiGroups
-            ),
+        // ── 顶部导航栏 ──
+        let title_text = row![
+            text("EyeForge").size(16).color(Color::WHITE),
+            text(format!(" v{VERSION}"))
+                .size(11)
+                .color(Color { a: 0.7, ..Color::WHITE }),
         ]
-        .spacing(8)
-        .width(160);
+        .spacing(2)
+        .align_y(Alignment::Center);
 
-        let rail = container(
-            column![
-                text("EyeForge").size(22).color(self.accent_color()),
-                text(self.t("桌面控制台", "Desktop Console"))
-                    .size(13)
-                    .color(self.muted_text_color()),
-                horizontal_rule(1),
-                navigation,
-                iced::widget::vertical_space(),
-                text(format!("v{VERSION}"))
-                    .size(12)
-                    .color(self.muted_text_color()),
-                text(self.t("Rust 原生", "Rust Native"))
-                    .size(12)
-                    .color(self.muted_text_color()),
+        let nav_buttons = row![
+            top_nav_button(self.t("首页", "Home"), self.current_page == Page::Home, Page::Home),
+            top_nav_button(self.t("设置", "Settings"), self.current_page == Page::Settings, Page::Settings),
+            top_nav_button(self.t("Skill", "Skills"), self.current_page == Page::Skills, Page::Skills),
+            top_nav_button(self.t("AI 群组", "AI Groups"), self.current_page == Page::AiGroups, Page::AiGroups),
+        ]
+        .spacing(2);
+
+        let window_buttons = row![
+            window_ctrl_button("─", Message::WindowMinimizePressed)
+                .width(46)
+                .height(32),
+            window_ctrl_button(
+                if self.window_maximized { "❐" } else { "□" },
+                Message::WindowMaximizePressed
+            )
+            .width(46)
+            .height(32),
+            window_ctrl_button("✕", Message::WindowClosePressed)
+                .width(46)
+                .height(32)
+                .style(close_button_style),
+        ]
+        .spacing(0);
+
+        let top_bar = container(
+            row![
+                title_text,
+                iced::widget::horizontal_space(),
+                nav_buttons,
+                iced::widget::horizontal_space().width(60),
+                window_buttons,
             ]
-            .spacing(18)
-            .padding([22, 18])
-            .height(Fill),
+            .align_y(Alignment::Center)
+            .padding(Padding::new(0.0).right(16.0)),
         )
-        .width(200)
-        .height(Fill)
-        .style(aside_style);
+        .width(Fill)
+        .height(40)
+        .style(top_bar_style);
 
         let content = match self.current_page {
             Page::Home => self.home_page(),
@@ -966,7 +994,10 @@ impl EyeForge {
             Page::AiGroups => self.ai_groups_page(),
         };
 
-        row![rail, content].width(Fill).height(Fill).into()
+        column![top_bar, content]
+            .width(Fill)
+            .height(Fill)
+            .into()
     }
 
     fn home_page(&self) -> Element<'_, Message> {
@@ -3005,6 +3036,36 @@ fn nav_button<'a>(label: &'a str, selected: bool, page: Page) -> Element<'a, Mes
         .into()
 }
 
+fn top_nav_button<'a>(label: &'a str, selected: bool, page: Page) -> Element<'a, Message> {
+    let btn = text(label)
+        .size(13)
+        .color(if selected { Color::WHITE } else { Color { a: 0.75, ..Color::WHITE } });
+    let content = if selected {
+        column![btn, horizontal_rule(2).style(|_: &Theme| iced::widget::rule::Style { color: Color::WHITE, width: 2, radius: 0.0.into(), fill_mode: iced::widget::rule::FillMode::Full })].spacing(2).align_x(Alignment::Center)
+    } else {
+        column![btn, horizontal_rule(2).style(|_: &Theme| iced::widget::rule::Style { color: Color::TRANSPARENT, width: 2, radius: 0.0.into(), fill_mode: iced::widget::rule::FillMode::Full })].spacing(2).align_x(Alignment::Center)
+    };
+    button(content)
+        .padding([8, 14])
+        .style(|_: &Theme, _: button::Status| button::Style {
+            background: None,
+            text_color: Color::WHITE,
+            ..button::Style::default()
+        })
+        .on_press(Message::SidebarClick(page))
+        .into()
+}
+
+fn window_ctrl_button<'a>(
+    label: &'a str,
+    msg: Message,
+) -> iced::widget::Button<'a, Message> {
+    button(text(label).size(14).color(Color::WHITE))
+        .padding([0, 0])
+        .style(window_ctrl_button_style)
+        .on_press(msg)
+}
+
 fn settings_tab_button<'a>(
     label: &'a str,
     selected: bool,
@@ -3130,6 +3191,62 @@ fn aside_style(theme: &Theme) -> container::Style {
         },
         text_color: Some(palette.background.base.text),
         ..container::Style::default()
+    }
+}
+
+fn top_bar_style(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+    let dark = palette.background.base.color.r
+        + palette.background.base.color.g
+        + palette.background.base.color.b
+        < 1.35;
+    let bg = if dark {
+        Color::from_rgb8(20, 50, 110)
+    } else {
+        Color::from_rgb8(40, 95, 185)
+    };
+    container::Style {
+        background: Some(Background::Color(bg)),
+        border: Border { width: 0.0, radius: 0.0.into(), color: Color::TRANSPARENT },
+        text_color: Some(Color::WHITE),
+        ..container::Style::default()
+    }
+}
+
+fn window_ctrl_button_style(theme: &Theme, status: button::Status) -> button::Style {
+    let palette = theme.extended_palette();
+    let dark = palette.background.base.color.r
+        + palette.background.base.color.g
+        + palette.background.base.color.b
+        < 1.35;
+    let bg = match status {
+        button::Status::Hovered => {
+            if dark { Color::from_rgb8(50, 90, 150) } else { Color::from_rgb8(60, 120, 210) }
+        }
+        button::Status::Pressed => {
+            if dark { Color::from_rgb8(30, 60, 120) } else { Color::from_rgb8(30, 80, 170) }
+        }
+        _ => Color::TRANSPARENT,
+    };
+    button::Style {
+        background: Some(Background::Color(bg)),
+        text_color: Color::WHITE,
+        border: Border { width: 0.0, radius: 0.0.into(), color: Color::TRANSPARENT },
+        ..button::Style::default()
+    }
+}
+
+fn close_button_style(_theme: &Theme, status: button::Status) -> button::Style {
+    let bg = match status {
+        button::Status::Hovered => Color::from_rgb8(196, 43, 28),
+        button::Status::Pressed => Color::from_rgb8(160, 30, 20),
+        _ => Color::TRANSPARENT,
+    };
+    button::Style {
+        background: Some(Background::Color(bg)),
+        text_color: Color::WHITE,
+        border: Border { width: 0.0, radius: 0.0.into(), color: Color::TRANSPARENT },
+        ..button::Style::default()
     }
 }
 

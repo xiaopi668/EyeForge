@@ -16,7 +16,7 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo [1/2] Checking Rust toolchain...
+echo [1/3] Checking Rust toolchain...
 cargo --version
 if %errorlevel% neq 0 (
     echo [ERROR] Failed to run cargo.
@@ -24,7 +24,24 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo [2/2] Building EyeForge...
+echo [2/3] Installing embedded HAPI dependencies...
+where npm >nul 2>nul
+if %errorlevel% neq 0 (
+    echo [ERROR] npm not found. Install Node.js to use the embedded HAPI server.
+    pause
+    exit /b 1
+)
+pushd hapi-server
+npm install
+if %errorlevel% neq 0 (
+    popd
+    echo [ERROR] Failed to install embedded HAPI dependencies.
+    pause
+    exit /b 1
+)
+popd
+
+echo [3/3] Building EyeForge...
 pushd src-rs
 cargo build
 if %errorlevel% neq 0 (
