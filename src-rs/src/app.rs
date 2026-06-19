@@ -937,9 +937,10 @@ impl EyeForge {
     pub fn view(&self) -> Element<'_, Message> {
         crate::tray::ensure_tray();
 
-        // ── 顶部导航栏 ──
+        // ── 顶部标题栏（PCL CE 风格，48px 高）──
+        // 左侧：Logo + 名称
         let title_text = row![
-            text("EyeForge").size(16).color(Color::WHITE),
+            text("EyeForge").size(17).color(Color::WHITE),
             text(format!(" v{VERSION}"))
                 .size(11)
                 .color(Color { a: 0.7, ..Color::WHITE }),
@@ -947,27 +948,23 @@ impl EyeForge {
         .spacing(2)
         .align_y(Alignment::Center);
 
+        // 中间：导航标签（MyRadioButton 风格，带选中高亮）
         let nav_buttons = row![
-            top_nav_button(self.t("首页", "Home"), self.current_page == Page::Home, Page::Home),
-            top_nav_button(self.t("设置", "Settings"), self.current_page == Page::Settings, Page::Settings),
-            top_nav_button(self.t("Skill", "Skills"), self.current_page == Page::Skills, Page::Skills),
-            top_nav_button(self.t("AI 群组", "AI Groups"), self.current_page == Page::AiGroups, Page::AiGroups),
+            pcl_tab_button("启动", self.current_page == Page::Home, Page::Home),
+            pcl_tab_button("下载", false, Page::Home),        // placeholder
+            pcl_tab_button("设置", self.current_page == Page::Settings, Page::Settings),
+            pcl_tab_button("工具", false, Page::Home),        // placeholder
         ]
-        .spacing(2);
+        .spacing(4);
 
+        // 右侧：窗口控制按钮（28x28，SVG 图标风格）
         let window_buttons = row![
-            window_ctrl_button("─", Message::WindowMinimizePressed)
-                .width(46)
-                .height(32),
-            window_ctrl_button(
+            pcl_window_button("─", Message::WindowMinimizePressed),
+            pcl_window_button(
                 if self.window_maximized { "❐" } else { "□" },
                 Message::WindowMaximizePressed
-            )
-            .width(46)
-            .height(32),
-            window_ctrl_button("✕", Message::WindowClosePressed)
-                .width(46)
-                .height(32)
+            ),
+            pcl_window_button("✕", Message::WindowClosePressed)
                 .style(close_button_style),
         ]
         .spacing(0);
@@ -977,16 +974,17 @@ impl EyeForge {
                 title_text,
                 iced::widget::horizontal_space(),
                 nav_buttons,
-                iced::widget::horizontal_space().width(60),
+                iced::widget::horizontal_space(),
                 window_buttons,
             ]
             .align_y(Alignment::Center)
-            .padding(Padding::new(0.0).right(16.0)),
+            .padding(Padding::new(0.0).right(12.0)),
         )
         .width(Fill)
-        .height(40)
+        .height(48)
         .style(top_bar_style);
 
+        // 下方布局：左侧内容区 + 右侧内容区（PCL CE 的 PanMainLeft + PanMainRight）
         let content = match self.current_page {
             Page::Home => self.home_page(),
             Page::Settings => self.settings_page(),
@@ -3036,32 +3034,57 @@ fn nav_button<'a>(label: &'a str, selected: bool, page: Page) -> Element<'a, Mes
         .into()
 }
 
-fn top_nav_button<'a>(label: &'a str, selected: bool, page: Page) -> Element<'a, Message> {
+fn pcl_tab_button<'a>(label: &'a str, selected: bool, page: Page) -> Element<'a, Message> {
     let btn = text(label)
         .size(13)
-        .color(if selected { Color::WHITE } else { Color { a: 0.75, ..Color::WHITE } });
-    let content = if selected {
-        column![btn, horizontal_rule(2).style(|_: &Theme| iced::widget::rule::Style { color: Color::WHITE, width: 2, radius: 0.0.into(), fill_mode: iced::widget::rule::FillMode::Full })].spacing(2).align_x(Alignment::Center)
-    } else {
-        column![btn, horizontal_rule(2).style(|_: &Theme| iced::widget::rule::Style { color: Color::TRANSPARENT, width: 2, radius: 0.0.into(), fill_mode: iced::widget::rule::FillMode::Full })].spacing(2).align_x(Alignment::Center)
-    };
-    button(content)
-        .padding([8, 14])
-        .style(|_: &Theme, _: button::Status| button::Style {
-            background: None,
-            text_color: Color::WHITE,
-            ..button::Style::default()
+        .color(if selected { Color::WHITE } else { Color { a: 0.78, ..Color::WHITE } });
+    // 选中时显示圆角高亮背景，未选中时透明
+    button(btn)
+        .padding([6, 16])
+        .style(move |theme: &Theme, status: button::Status| {
+            let palette = theme.extended_palette();
+            let dark = palette.background.base.color.r
+                + palette.background.base.color.g
+                + palette.background.base.color.b
+                < 1.35;
+            let (bg_hover, bg_selected) = if dark {
+                (Color::from_rgba(1.0, 1.0, 1.0, 0.12),
+                 Color::from_rgba(1.0, 1.0, 1.0, 0.18))
+            } else {
+                (Color::from_rgba(1.0, 1.0, 1.0, 0.15),
+                 Color::from_rgba(1.0, 1.0, 1.0, 0.25))
+            };
+            let bg = if selected {
+                bg_selected
+            } else {
+                match status {
+                    button::Status::Hovered => bg_hover,
+                    _ => Color::TRANSPARENT,
+                }
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                text_color: Color::WHITE,
+                border: Border {
+                    width: 0.0,
+                    radius: 6.0.into(),
+                    color: Color::TRANSPARENT,
+                },
+                ..button::Style::default()
+            }
         })
         .on_press(Message::SidebarClick(page))
         .into()
 }
 
-fn window_ctrl_button<'a>(
+fn pcl_window_button<'a>(
     label: &'a str,
     msg: Message,
 ) -> iced::widget::Button<'a, Message> {
     button(text(label).size(14).color(Color::WHITE))
         .padding([0, 0])
+        .width(28)
+        .height(28)
         .style(window_ctrl_button_style)
         .on_press(msg)
 }
@@ -3200,10 +3223,11 @@ fn top_bar_style(theme: &Theme) -> container::Style {
         + palette.background.base.color.g
         + palette.background.base.color.b
         < 1.35;
+    // PCL CE "龙猫蓝"：浅色 #3A7BD5，深色 #1A3A6B
     let bg = if dark {
-        Color::from_rgb8(20, 50, 110)
+        Color::from_rgb8(26, 58, 107)
     } else {
-        Color::from_rgb8(40, 95, 185)
+        Color::from_rgb8(58, 123, 213)
     };
     container::Style {
         background: Some(Background::Color(bg)),
@@ -3221,17 +3245,17 @@ fn window_ctrl_button_style(theme: &Theme, status: button::Status) -> button::St
         < 1.35;
     let bg = match status {
         button::Status::Hovered => {
-            if dark { Color::from_rgb8(50, 90, 150) } else { Color::from_rgb8(60, 120, 210) }
+            if dark { Color::from_rgb8(50, 90, 150) } else { Color::from_rgb8(80, 145, 230) }
         }
         button::Status::Pressed => {
-            if dark { Color::from_rgb8(30, 60, 120) } else { Color::from_rgb8(30, 80, 170) }
+            if dark { Color::from_rgb8(35, 65, 120) } else { Color::from_rgb8(45, 105, 195) }
         }
         _ => Color::TRANSPARENT,
     };
     button::Style {
         background: Some(Background::Color(bg)),
         text_color: Color::WHITE,
-        border: Border { width: 0.0, radius: 0.0.into(), color: Color::TRANSPARENT },
+        border: Border { width: 0.0, radius: 4.0.into(), color: Color::TRANSPARENT },
         ..button::Style::default()
     }
 }
@@ -3245,7 +3269,7 @@ fn close_button_style(_theme: &Theme, status: button::Status) -> button::Style {
     button::Style {
         background: Some(Background::Color(bg)),
         text_color: Color::WHITE,
-        border: Border { width: 0.0, radius: 0.0.into(), color: Color::TRANSPARENT },
+        border: Border { width: 0.0, radius: 4.0.into(), color: Color::TRANSPARENT },
         ..button::Style::default()
     }
 }
