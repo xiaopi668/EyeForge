@@ -1319,8 +1319,10 @@ impl EyeForge {
                         text(format!("✗ {}", b.name)).size(14).color(self.primary_text_color()),
                         text(b.description).size(12).color(self.secondary_text_color()),
                         iced::widget::horizontal_space(),
-                        checkbox(self.t("安装", "Install"), false)
-                            .size(16),
+                        button(text(self.t("安装", "Install")).size(12))
+                            .padding([4, 12])
+                            .style(subtle_button_style)
+                            .on_press(Message::BoolChanged(BoolField::VisionEnabled, false)),
                     ]
                     .spacing(8)
                     .align_y(Alignment::Center)
@@ -1339,7 +1341,13 @@ impl EyeForge {
         }
 
         // 根据选中的后端动态生成设备选项
-        let devices: &[&str] = match selected_name {
+        let all_names: Vec<&str> = backends_available.iter().map(|b| b.name).collect();
+        let cur_name = if self.selected_backend.is_empty() {
+            all_names.first().copied().unwrap_or("")
+        } else {
+            self.selected_backend.as_str()
+        };
+        let devices: &[&str] = match cur_name {
             "llama.cpp" => &["Auto", "CPU", "CUDA", "Metal", "Vulkan"],
             "ONNX Runtime" => &["Auto", "CPU", "CUDA", "TensorRT", "OpenVINO"],
             "PyTorch" => &["Auto", "CPU", "CUDA", "MPS"],
@@ -1417,15 +1425,10 @@ impl EyeForge {
             ]
         } else {
             supported_formats.iter().map(|fmt| {
-                row![
-                    checkbox("", false).size(16),
-                    text(format!("📦 {}", fmt))
-                        .size(13)
-                        .color(self.primary_text_color()),
-                ]
-                .spacing(6)
-                .align_y(Alignment::Center)
-                .into()
+                text(format!("📦 {}", fmt))
+                    .size(13)
+                    .color(self.primary_text_color())
+                    .into()
             }).collect()
         };
 
